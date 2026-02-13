@@ -1,5 +1,5 @@
-# Archives and build artifacts
 archives/
+icons audio elements etc/
 *.zip
 *.dmg
 
