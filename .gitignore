@@ -13,3 +13,5 @@ build/
 # SwiftPM
 .swiftpm/
 *.xcodeproj/
+*.xcuserstate
+xcuserdata/
