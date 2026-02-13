@@ -1023,7 +1023,6 @@ class AppCore: ObservableObject {
     
     func applyPreset(name: String) {
         guard let preset = availablePresets.first(where: { $0.name == name }) else {
-            print("⚠️ Preset '\(name)' not found")
             return
         }
         
@@ -1157,7 +1156,6 @@ class AppCore: ObservableObject {
                ?? "/Applications/Thinkbox/Deadline10/Resources/deadlinecommand")
             : settings.deadlineCommandPath
 
-        print("🔍 Using Deadline command path: \(dlCmd)")
         
         DispatchQueue.global(qos: .userInitiated).async {
             do {

@@ -84,22 +84,17 @@ class EncodingService: ObservableObject {
     private func runLocal(items: [MediaItem], settings: Settings) {
         let needsOverlays = settings.burnInTimecode || settings.burnInFrames || settings.burnInFilename
 
-        print("MODE: Local (native AVFoundation/VideoToolbox)")
-        print("Quality: \(settings.qualityCRF)  Scale: \(settings.scale.rawValue)  NCLC: \(settings.nclcTag)")
         if needsOverlays && settings.codec == .bypass {
-            print("  → Overlays active with bypass codec: encoding required")
         }
 
         for item in items {
             if wasGloballyCancelled {
-                print("🛑 Global cancel detected - stopping queue")
                 break
             }
 
             // Pause gate — poll until resumed or cancelled
             while isGloballyPaused {
                 if wasGloballyCancelled {
-                    print("🛑 Stop during pause - exiting")
                     break
                 }
                 Thread.sleep(forTimeInterval: 0.5)
@@ -122,7 +117,6 @@ class EncodingService: ObservableObject {
 
         Self.handlerQueue.async(flags: .barrier) {
             for (id, handler) in Self.activeCancelHandlers {
-                print("🛑 Cancelling encode for item \(id)")
                 handler()
             }
             Self.activeCancelHandlers.removeAll()
