@@ -1,0 +1,4 @@
+# Archives and build artifacts
+archives/
+*.zip
+*.dmg
