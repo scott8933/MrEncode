@@ -60,7 +60,6 @@ enum EncodeEngine {
     ) -> Result<EncodeResult, EncodeError> {
 
         
-        LOG("🧪 EncodeEngine 422 TEST BUILD ACTIVE (checkpoint A)")
         
         
         emit(.phase(.preparing))
@@ -156,7 +155,6 @@ enum EncodeEngine {
         do {
             let fileType: AVFileType = (req.settings.containerFormat == .mp4) ? .mp4 : .mov
             writer = try AVAssetWriter(outputURL: tempURL, fileType: fileType)
-            LOG("🧪 checkpoint 1: tempURL resolved = \(tempURL.path)")
         } catch {
             let e = EncodeError(.writerFailed, "Writer init failed: \(error.localizedDescription)")
             emit(.failed(e))
@@ -185,7 +183,6 @@ enum EncodeEngine {
             vidSettings[AVVideoColorPropertiesKey] = props
         }
 
-        LOG("🧪 179()")
 
         // TEST BUILD: force HEVC Main42210 profile regardless of Settings.
         vidSettings[AVVideoCodecKey] = AVVideoCodecType.hevc.rawValue
@@ -213,7 +210,6 @@ enum EncodeEngine {
             ]
         )
 
-        LOG("🧪 191()")
         /*
         let videoInput = AVAssetWriterInput(mediaType: AVMediaType.video, outputSettings: vidSettings)
         videoInput.expectsMediaDataInRealTime = false
@@ -229,11 +225,9 @@ enum EncodeEngine {
                 kCVPixelBufferHeightKey as String: aligned.height
             ]
         )
-        LOG("🧪 206)")
 */
         // TEST BUILD: hardwired 4:2:2 10-bit converter (BGRA -> P210). No fallback.
         guard let metalConverter = Metal42210Converter() else {
-            LOG("❌ Metal42210Converter init failed (returned nil)")
             let e = EncodeError(.pipelineFailed, "Metal42210Converter init failed (Metal device/library/kernel missing).")
             emit(.failed(e))
             return .failure(e)
@@ -267,7 +261,6 @@ enum EncodeEngine {
         }
         LOG("🧪 239()")
         // ✅ put it HERE (only runs if startWriting succeeded)
-        LOG("🧪 checkpoint B: startWriting returned true")
         LOG("   writer.status=\(writer.status.rawValue) (\(writer.status)) err=\(writer.error?.localizedDescription ?? "nil")")
         LOG("   adaptor.pixelBufferPool is \(adaptor.pixelBufferPool == nil ? "NIL" : "NON-NIL")")
 
@@ -282,7 +275,6 @@ enum EncodeEngine {
         LOG("   reader.status=\(reader.status.rawValue) (\(reader.status)) err=\(reader.error?.localizedDescription ?? "nil")")
 
         writer.startSession(atSourceTime: .zero)
-        LOG("🧪 checkpoint C: startSession called")
         LOG("   writer.status=\(writer.status.rawValue) (\(writer.status)) err=\(writer.error?.localizedDescription ?? "nil")")
         LOG("   adaptor.pixelBufferPool is \(adaptor.pixelBufferPool == nil ? "NIL" : "NON-NIL")")
 
@@ -543,14 +535,12 @@ enum EncodeEngine {
                     at: req.outputURL.deletingLastPathComponent(),
                     withIntermediateDirectories: true
                 )
-                LOG("🧪 checkpoint 2: output directory ensured")
                 // Finalize temp → final using unified overwrite + cross-volume logic
                 try OutputFinalizer.finalize(
                     tempURL: tempURL,
                     finalURL: req.outputURL,
                     options: .init(allowOverwrite: req.allowOverwrite)
                 )
-                LOG("🧪 checkpoint 3: reader created")
 
                 // At this point tempURL should be gone, but keep a last-resort sweep.
                 Self.cleanupTemp(tempURL)
@@ -560,7 +550,6 @@ enum EncodeEngine {
                 if tmpDir.lastPathComponent == ".mrencode_tmp" {
                     Self.cleanupEmptyDir(tmpDir)
                 }
-                LOG("🧪 checkpoint 4: videoOutput added to reader")
 
                 let r = EncodeResult(
                     outputURL: req.outputURL,
@@ -569,7 +558,6 @@ enum EncodeEngine {
                 )
                 emit(.completed(r))
                 finalResult = .success(r)
-                LOG("🧪 checkpoint 5: writer created at tempURL = \(tempURL.path)")
 
             } catch {
                 // Best-effort cleanup (do NOT try to chase .sb-* anymore)
@@ -580,7 +568,6 @@ enum EncodeEngine {
                 if tmpDir.lastPathComponent == ".mrencode_tmp" {
                     Self.cleanupEmptyDir(tmpDir)
                 }
-                LOG("🧪 checkpoint 8: about to call writer.startWriting()")
                 let e = EncodeError(.finalizeFailed, "Failed to finalize output: \(error.localizedDescription)")
                 emit(.failed(e))
                 finalResult = .failure(e)
