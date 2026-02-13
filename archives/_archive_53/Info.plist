@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>QuickTime Movie</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.apple.quicktime-movie</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeIconFile</key>
+			<string>MrEncode_Droplet</string>
+			<key>CFBundleTypeName</key>
+			<string>MrEncode Droplet</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.mrencode.droplet</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>MrEncode Queue</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.grayrobot.mrencode.queue</string>
+			</array>
+			<key>CFBundleTypeIconFile</key>
+			<string>MrEncode_Queue</string>
+		</dict>
+	</array>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIconName</key>
+			<string>MrEncode_Droplet</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+				<string>com.apple.application-bundle</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>MrEncode Droplet</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.mrencode.droplet</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mrencode</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-mrencode-droplet</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.grayrobot.mrencode.queue</string>
+			<key>UTTypeIconName</key>
+			<string>MrEncode_Queue</string>
+			<key>UTTypeDescription</key>
+			<string>MrEncode Queue</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mrq</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>application/json</string>
+			</dict>
+		</dict>
+	</array>
+</dict>
+</plist>

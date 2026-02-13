@@ -1,0 +1,532 @@
+-- MrEncode Droplet: {{PRESET_NAME}}
+-- Created: {{CREATION_DATE}}
+-- Drag media onto this droplet to process it with the embedded preset.
+
+use AppleScript version "2.6"
+use framework "Foundation"
+use framework "AppKit"
+use scripting additions
+
+-- Legacy fallback only (last resort)
+property presetData : "{{SETTINGS_JSON}}"
+
+property mrencodeBundleID : "{{BUNDLE_ID}}"
+property mrencodeAppPath : "{{APP_PATH}}"
+property presetName : "{{PRESET_NAME}}"
+property presetResourceFilename : "{{PRESET_RESOURCE_NAME}}"
+
+on open droppedItems
+    -- Guard against accidentally dropping massive directories
+    if my userCancelledLargeFolderDrops(droppedItems, 25) then return
+    
+    -- Convert dropped items early
+    set inputFiles to my pathsFromDroppedItems(droppedItems)
+    
+    -- Queue the dropped paths (handles Finder calling on open multiple times)
+    my appendPathsToQueue(inputFiles)
+    
+    -- If we cannot acquire the lock, another invocation is already running.
+    -- Exit now; the running instance will pick up queued paths.
+    if my tryAcquireLock() is false then
+        return
+    end if
+    
+    set debugLogPath to my makeLogPath(presetName)
+    
+    -- Coalesce any near-simultaneous open events
+    set inputFiles to {}
+    set stableEmptyReads to 0
+    
+    repeat while stableEmptyReads < 8
+        delay 0.25
+        set newFiles to my popQueuedPaths()
+        
+        if (count of newFiles) > 0 then
+            set stableEmptyReads to 0
+            repeat with p in newFiles
+                set end of inputFiles to (p as text)
+            end repeat
+        else
+            set stableEmptyReads to stableEmptyReads + 1
+        end if
+    end repeat
+    
+    -- Dedupe coalesced paths (Finder can enqueue the same file multiple times)
+    set inputFiles to my dedupePathsPreserveOrder(inputFiles)
+    
+    
+    my appendToLog(debugLogPath, "COALESCED count: " & (count of inputFiles))
+    repeat with p in inputFiles
+        my appendToLog(debugLogPath, "COALESCED: " & (p as text))
+    end repeat
+    
+    
+    my appendToLog(debugLogPath, "Dropped item count: " & (count of inputFiles))
+    repeat with p in inputFiles
+        my appendToLog(debugLogPath, "Dropped: " & p)
+    end repeat
+    
+    if (count of inputFiles) = 0 then
+        my releaseLock()
+        display dialog "No input files were provided." buttons {"OK"} default button 1 with icon caution
+        return
+    end if
+    
+    -- Locate MrEncode app (by bundle id)
+    set mrencodePath to my findMrEncodeApp()
+    if mrencodePath is missing value or mrencodePath is "" then
+        my releaseLock()
+        display dialog "MrEncode could not be found. Please install MrEncode and try again." buttons {"OK"} default button "OK" with icon caution
+        return
+    end if
+    
+    set mrencodeExecutable to mrencodePath & "/Contents/MacOS/mrencode"
+    set pid to "0"
+    
+    -- Basic sanity check that executable exists
+    try
+        do shell script "/bin/test -x " & quoted form of mrencodeExecutable
+    on error
+        my releaseLock()
+        display dialog "MrEncode executable could not be launched:" & return & return & mrencodeExecutable buttons {"OK"} default button "OK" with icon caution
+        return
+    end try
+    
+    -- Resolve preset inside droplet Resources (preferred)
+    set presetFilePosix to my findPresetInDroplet()
+    
+    -- Last-resort: if no preset file found, fall back to embedded JSON -> temp file
+    set tempPresetFile to missing value
+    if presetFilePosix is missing value then
+        if presetData is "" or presetData is "{{SETTINGS_JSON}}" then
+            my releaseLock()
+            display dialog "This droplet is missing Preset.mrepreset (or legacy Preset.json) and has no embedded preset data." buttons {"OK"} default button "OK" with icon caution
+            return
+        end if
+        
+        set tempFolder to (path to temporary items folder as string)
+        set tempPresetFile to tempFolder & "mrencode_droplet_" & (do shell script "uuidgen") & ".json"
+        set presetFilePosix to POSIX path of tempPresetFile
+        
+        try
+            set fileRef to open for access file tempPresetFile with write permission
+            set eof of fileRef to 0
+            write presetData to fileRef
+            close access fileRef
+        on error errMsg number errNum
+            try
+                close access file tempPresetFile
+            end try
+            my releaseLock()
+            display dialog "Failed to write temporary preset file." & return & return & errMsg buttons {"OK"} default button "OK" with icon caution
+            return
+        end try
+    end if
+    
+    -- Progress file path (temp, per-user; avoid /tmp litter)
+    set tempRootPosix to POSIX path of (path to temporary items folder)
+    set progressDirPosix to tempRootPosix & "MrEncode/Progress/"
+    set progressFilePath to progressDirPosix & "mrencode_progress_" & (do shell script "uuidgen") & ".jsonl"
+    
+    -- Ensure progress dir exists + create file before launching MrEncodeProgress
+    do shell script "/bin/mkdir -p " & quoted form of progressDirPosix
+    do shell script "/usr/bin/touch " & quoted form of progressFilePath
+    
+    -- Log progress file path for troubleshooting
+    do shell script "/bin/echo " & quoted form of ("Progress JSONL: " & progressFilePath) & " >> " & quoted form of debugLogPath
+    
+    try
+        -- Launch MrEncodeProgress UI
+        set mePath to POSIX path of (path to me)
+        set progressAppPath to mePath & "Contents/Resources/MrEncodeProgress.app/Contents/MacOS/MrEncodeProgress"
+        
+        if my fileExists(progressAppPath) then
+            -- TEMP DEBUG: capture Progress app logs + enable tailer debug
+            set progressLogPath to debugLogPath & ".progressui.log"
+            set progressCmd to "MR_ENCODE_DEBUG_PROGRESS_TAILER=1 " & quoted form of progressAppPath & " --progress-file " & quoted form of progressFilePath & " --chime-volume 0.5 >> " & quoted form of progressLogPath & " 2>&1 &"
+            
+            my appendToLog(debugLogPath, "Launching MrEncodeProgress:")
+            my appendToLog(debugLogPath, progressCmd)
+            
+            do shell script progressCmd
+            delay 0.2
+            my appendToLog(debugLogPath, "Launched MrEncodeProgress UI (log: " & progressLogPath & ")")
+        else
+            my appendToLog(debugLogPath, "Warning: MrEncodeProgress.app not found in droplet bundle")
+        end if
+        
+        
+        repeat
+            -- If nothing to do, exit loop
+            if (count of inputFiles) = 0 then exit repeat
+            
+            my appendToLog(debugLogPath, "BATCH count: " & (count of inputFiles))
+            repeat with p in inputFiles
+                my appendToLog(debugLogPath, "BATCH: " & (p as text))
+            end repeat
+            
+            -- Build file list for the CLI
+            set fileArgs to my joinQuoted(inputFiles)
+            
+            -- Build the CLI command line
+            set shellCommand to quoted form of mrencodeExecutable & " --cli --droplet " & quoted form of presetFilePosix & " --droplet-debug-log " & quoted form of debugLogPath & " --progress-file " & quoted form of progressFilePath & " --suppress-chime {{CLI_EXTRA_ARGS}} " & fileArgs
+            
+            my appendToLog(debugLogPath, "MrEncode Droplet: Executing:")
+            my appendToLog(debugLogPath, shellCommand)
+            my appendToLog(debugLogPath, "Progress file: " & progressFilePath)
+            
+            -- Launch CLI encoder async
+            set pid to my launchCommandReturningPID(shellCommand, debugLogPath)
+            my appendToLog(debugLogPath, "Launched CLI PID: " & pid)
+            
+            if pid is missing value or pid is "0" or pid is "" then
+                error "Failed to launch MrEncode CLI (pid=" & pid & ")."
+            end if
+            
+            -- Wait for process to exit
+            repeat
+                if my pidIsRunning(pid) is false then exit repeat
+                delay 0.5
+            end repeat
+            my appendToLog(debugLogPath, "CLI finished")
+            
+            -- IMPORTANT:
+            -- Before checking the queue again, allow a short window for late Finder invocations to append.
+            delay 0.25
+            
+            -- Pull any new queued paths and run again (same droplet instance)
+            set inputFiles to my popQueuedPaths()
+            set inputFiles to my dedupePathsPreserveOrder(inputFiles)
+            
+            -- If we have a new batch, create a new progress file + relaunch progress UI for that batch.
+            if (count of inputFiles) > 0 then
+                set progressFilePath to progressDirPosix & "mrencode_progress_" & (do shell script "uuidgen") & ".jsonl"
+                do shell script "/usr/bin/touch " & quoted form of progressFilePath
+                my appendToLog(debugLogPath, "Next batch Progress JSONL: " & progressFilePath)
+                
+                set progressCmd to quoted form of progressAppPath & " --progress-file " & quoted form of progressFilePath & " --chime-volume 0.5 &"
+                do shell script progressCmd
+                delay 0.2
+                my appendToLog(debugLogPath, "Relaunched MrEncodeProgress UI for next batch")
+            end if
+        end repeat
+        
+        
+        my appendToLog(debugLogPath, "CLI finished")
+        
+        
+    on error errMsg number errNum
+        my appendToLog(debugLogPath, "Droplet error (" & errNum & "): " & errMsg)
+        
+        -- Release droplet lock (error exit)
+        my releaseLock()
+        
+        display dialog "Droplet error:" & return & return & errMsg buttons {"OK"} default button 1 with icon caution
+    end try
+    
+    -- Cleanup temp preset if used
+    if tempPresetFile is not missing value then
+        try
+            do shell script "/bin/rm -f " & quoted form of (POSIX path of tempPresetFile)
+        end try
+    end if
+    
+    my releaseLock()
+    
+end open
+
+
+-- MARK: - Async launch + process polling
+
+on launchCommandReturningPID(shellCommand, debugLogPath)
+    try
+        -- Launch async, append stdout/stderr to debug log, return PID.
+        -- NOTE: no exit-code temp file written anymore.
+        set cmd to "/bin/bash -lc " & quoted form of (shellCommand & " >> " & quoted form of debugLogPath & " 2>&1") & " & echo $!"
+        set pidStr to do shell script cmd
+        return pidStr as integer
+    on error
+        return missing value
+    end try
+end launchCommandReturningPID
+
+
+on pidIsRunning(pidNum)
+    try
+        do shell script "/bin/kill -0 " & pidNum
+        return true
+    on error
+        return false
+    end try
+end pidIsRunning
+
+on tailLog(logPath, nLines)
+    try
+        return do shell script "/usr/bin/tail -n " & nLines & " " & quoted form of logPath
+    on error
+        return ""
+    end try
+end tailLog
+
+
+-- MARK: - Helpers
+
+on pathsFromDroppedItems(droppedItems)
+    set outPaths to {}
+    repeat with anItem in droppedItems
+        try
+            set end of outPaths to POSIX path of anItem
+        on error
+            try
+                set end of outPaths to (anItem as text)
+            end try
+        end try
+    end repeat
+    return outPaths
+end pathsFromDroppedItems
+
+on appendToLog(logPath, message)
+    try
+        do shell script "/bin/echo " & quoted form of message & " >> " & quoted form of logPath
+    on error
+        -- ignore logging failures
+    end try
+end appendToLog
+
+on makeLogPath(nameTag)
+    try
+        set baseDir to (POSIX path of (path to library folder from user domain)) & "Logs/GrayRobot/MrEncode/Droplets/"
+        do shell script "/bin/mkdir -p " & quoted form of baseDir
+        set ts to do shell script "date +%Y%m%d_%H%M%S"
+        return baseDir & nameTag & "_" & ts & ".log"
+    on error
+        return "/tmp/mrencode_droplet_" & (do shell script "date +%Y%m%d_%H%M%S") & ".log"
+    end try
+end makeLogPath
+
+on run
+    set dialogText to "MrEncode droplet for preset:" & return & "  • " & presetName & return & return & ¬
+        "Drag media onto this app to encode them using the embedded preset." & return & return & ¬
+        "Preset file: Preset.mrepreset (preferred) or Preset.json (legacy)" & return & return & ¬
+        "Supported formats: Any media format supported by macOS AVFoundation/VideoToolbox"
+    display dialog dialogText buttons {"OK"} default button 1 with icon note giving up after 10
+end run
+
+on findMrEncodeApp()
+    if mrencodeAppPath is not "" then
+        try
+            do shell script "/bin/test -d " & quoted form of mrencodeAppPath
+            return mrencodeAppPath
+        end try
+    end if
+    
+    try
+        set p to POSIX path of (path to application id mrencodeBundleID)
+        if p is not "" then
+            if p ends with "/" then set p to text 1 thru -2 of p
+            return p
+        end if
+    end try
+    
+    error "MrEncode application not found (bundle id: " & mrencodeBundleID & ")."
+end findMrEncodeApp
+
+on findPresetInDroplet()
+    set mePath to POSIX path of (path to me)
+    set p1 to mePath & "Contents/Resources/" & presetResourceFilename
+    set p2 to mePath & "Contents/Resources/Preset.json"
+    
+    if my fileExists(p1) then return p1
+    if my fileExists(p2) then return p2
+    return missing value
+end findPresetInDroplet
+
+on fileExists(p)
+    try
+        do shell script "/bin/test -f " & quoted form of p
+        return true
+    on error
+        return false
+    end try
+end fileExists
+
+on joinQuoted(posixPathList)
+    set out to ""
+    repeat with p in posixPathList
+        set out to out & " " & quoted form of p
+    end repeat
+    return out
+end joinQuoted
+
+on userCancelledLargeFolderDrops(droppedItems, maxItems)
+    repeat with anItem in droppedItems
+        set p to POSIX path of anItem
+        if my isDirectory(p) then
+            set n to my countImmediateChildren(p)
+            if n > maxItems then
+                set msg to "You dropped a folder containing " & n & " items:" & return & return & p & return & return & ¬
+                    "Continue anyway?"
+                display dialog msg buttons {"Cancel", "Continue"} default button "Cancel" with icon caution
+                set btn to button returned of result
+                if btn is "Cancel" then return true
+            end if
+        end if
+    end repeat
+    return false
+end userCancelledLargeFolderDrops
+
+on isDirectory(posixPath)
+    try
+        do shell script "/bin/test -d " & quoted form of posixPath
+        return true
+    on error
+        return false
+    end try
+end isDirectory
+
+on countImmediateChildren(folderPosixPath)
+    try
+        set cmd to "/usr/bin/find " & quoted form of folderPosixPath & " -mindepth 1 -maxdepth 1 | /usr/bin/wc -l | /usr/bin/tr -d ' '"
+        set t to do shell script cmd
+        return t as integer
+    on error
+        return 0
+    end try
+end countImmediateChildren
+
+on readDoneChimeVolumeFromPreset(presetFilePosix)
+    try
+        set js to "ObjC.import('Foundation');" & ¬
+            "function clamp(x) { x=parseFloat(x); if (isNaN(x)) return 0.30; if (x<0) x=0; if (x>1) x=1; return x; }" & ¬
+            "var args=$.NSProcessInfo.processInfo.arguments;" & ¬
+            "var p=ObjC.unwrap(args.lastObject);" & ¬
+            "var data=$.NSData.dataWithContentsOfFile(p);" & ¬
+            "if (!data) { console.log('0.30'); $.exit(0); }" & ¬
+            "var obj=$.NSJSONSerialization.JSONObjectWithDataOptionsError(data,0,null);" & ¬
+            "var v=0.30;" & ¬
+            "if (obj && obj.isKindOfClass($.NSDictionary)) {" & ¬
+            "  var settings=obj.objectForKey('settings');" & ¬
+            "  if (settings && settings.isKindOfClass($.NSDictionary)) {" & ¬
+            "    var x=settings.objectForKey('doneChimeVolumeRaw');" & ¬
+            "    if (x===null || x===undefined) x=settings.objectForKey('doneChimeVolume');" & ¬
+            "    if (x!==null && x!==undefined) v=clamp(x);" & ¬
+            "  }" & ¬
+            "}" & ¬
+            "console.log(v.toFixed(3));"
+        
+        set outStr to do shell script "/usr/bin/osascript -l JavaScript -e " & quoted form of js & " " & quoted form of presetFilePosix
+        return outStr as real
+    on error
+        return 0.3
+    end try
+end readDoneChimeVolumeFromPreset
+
+-- You know what we need? More helpers:
+
+on dropletQueueDirPosix()
+    set tempRootPosix to POSIX path of (path to temporary items folder)
+    return tempRootPosix & "MrEncode/DropletQueue/"
+end dropletQueueDirPosix
+
+
+on dropletQueueFilePosix()
+    return my dropletQueueDirPosix() & "queue.txt"
+end dropletQueueFilePosix
+
+on ensureQueueDir()
+    do shell script "/bin/mkdir -p " & quoted form of my dropletQueueDirPosix()
+end ensureQueueDir
+
+on dropletLockDirPosix()
+    return my dropletQueueDirPosix() & "droplet.lockdir"
+end dropletLockDirPosix
+
+on tryAcquireLock()
+    my ensureQueueDir()
+    set lockDir to my dropletLockDirPosix()
+    
+    -- 1st attempt
+    try
+        do shell script "/bin/mkdir " & quoted form of lockDir
+        return true
+    on error
+        -- If lock exists but is stale, clear it and retry once.
+        try
+            set nowS to (do shell script "/bin/date +%s")
+            set mtimeS to (do shell script "/usr/bin/stat -f %m " & quoted form of lockDir)
+            set ageS to (nowS as integer) - (mtimeS as integer)
+            
+            -- stale threshold (seconds)
+            if ageS > 30 then
+                do shell script "/bin/rm -rf " & quoted form of lockDir
+                delay 0.05
+                do shell script "/bin/mkdir " & quoted form of lockDir
+                return true
+            end if
+        end try
+        
+        return false
+    end try
+end tryAcquireLock
+
+on releaseLock()
+    try
+        do shell script "/bin/rm -rf " & quoted form of my dropletLockDirPosix()
+    end try
+end releaseLock
+
+on appendPathsToQueue(pathList)
+    my ensureQueueDir()
+    set q to my dropletQueueFilePosix()
+    repeat with p in pathList
+        do shell script "/bin/echo " & quoted form of (p as text) & " >> " & quoted form of q
+    end repeat
+end appendPathsToQueue
+
+on popQueuedPaths()
+    my ensureQueueDir()
+    set q to my dropletQueueFilePosix()
+    
+    -- If no queue file, return empty
+    try
+        do shell script "/bin/test -f " & quoted form of q
+    on error
+        return {}
+    end try
+    
+    set raw to do shell script "/bin/cat " & quoted form of q
+    -- clear queue immediately
+    do shell script "/bin/rm -f " & quoted form of q
+    
+    if raw is "" then return {}
+    
+    set outPaths to {}
+    set oldTIDs to AppleScript's text item delimiters
+    set AppleScript's text item delimiters to return
+    set itemsList to text items of raw
+    set AppleScript's text item delimiters to oldTIDs
+    
+    repeat with s in itemsList
+        set t to (s as text)
+        if t is not "" then set end of outPaths to t
+    end repeat
+    
+    return outPaths
+end popQueuedPaths
+
+
+-- I thought we needed more helpers so here is another helper
+
+on dedupePathsPreserveOrder(pathList)
+    set outList to {}
+    repeat with p in pathList
+        set s to (p as text)
+        if s is not "" then
+            if outList does not contain s then
+                set end of outList to s
+            end if
+        end if
+    end repeat
+    return outList
+end dedupePathsPreserveOrder
+

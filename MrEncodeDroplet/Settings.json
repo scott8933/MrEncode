@@ -1,0 +1,66 @@
+{
+  "settings" : {
+    "poolOptions" : [
+
+    ],
+    "overlaysExpanded" : false,
+    "dependencies" : "",
+    "customScaleWidthRaw" : 1920,
+    "scaleExpanded" : false,
+    "customScaleHeightRaw" : 1080,
+    "overlayBoxEnabled" : true,
+    "comment" : "",
+    "customScaleModeRaw" : "Fit",
+    "qualityCRF" : 18,
+    "codec" : "hevc",
+    "burnInFramesPosition" : "lowerRight",
+    "scaleSuffix" : "",
+    "deadlineExpanded" : false,
+    "containerFormat" : "mov",
+    "nclcTag" : "No Change",
+    "customScaleAnchorRaw" : "center",
+    "selectedPresetName" : "Good Quality - Local",
+    "deadlineCommandPath" : "",
+    "overlayTextColorHex" : "#FFFFFF",
+    "uiTheme" : "system",
+    "outputSuffix" : "-HEVC",
+    "overlayBoxColorAlpha" : 0.800000011920929,
+    "overlayBoxColorHex" : "#000000",
+    "autoEncodeOnDrop" : false,
+    "overlayTextColorAlpha" : 1,
+    "burnInFilename" : false,
+    "burnInFilenamePosition" : "lowerRight",
+    "suffixSeparator" : "-",
+    "nclcExpanded" : false,
+    "overlaySuffix" : "",
+    "groupOptions" : [
+
+    ],
+    "scale" : "1:1 (No Scale)",
+    "priority" : 50,
+    "burnInTimecode" : false,
+    "generalExpanded" : false,
+    "batchName" : "",
+    "runMode" : "Local",
+    "nclcFilenameLabel" : "",
+    "pool" : "none",
+    "group" : "none",
+    "filenameOrder" : [
+      "nclc",
+      "scale",
+      "compression"
+    ],
+    "burnInTimecodePosition" : "lowerLeft",
+    "burnInFrames" : false,
+    "secondaryPool" : "none",
+    "meta" : {
+      "durationSeconds" : 0
+    },
+    "presetsExpanded" : true,
+    "bypassHEVC" : false,
+    "jobName" : ""
+  },
+  "createdDate" : 792144098.38663,
+  "version" : 1,
+  "presetName" : "Good Quality - Local"
+}

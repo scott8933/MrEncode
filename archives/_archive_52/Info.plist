@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>QuickTime Movie</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.apple.quicktime-movie</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeIconFile</key>
+			<string></string>
+			<key>CFBundleTypeName</key>
+			<string>MrHEVC Droplet</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.mrhevc.droplet</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleIconFile</key>
+	<string></string>
+	<key>LSMinimumSystemVersion</key>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+				<string>com.apple.application-bundle</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>MrHEVC Droplet</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.mrhevc.droplet</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mrhevc</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-mrhevc-droplet</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+</dict>
+</plist>

@@ -1,0 +1,250 @@
+-- MrHEVC Droplet: {{PRESET_NAME}}
+-- Created: {{CREATION_DATE}}
+-- Drag QuickTime (.mov / .mp4) files onto this droplet to process them with the saved preset.
+-- NOTE: Codec selection (H.264 / H.265 / No Recompression) is stored inside the embedded preset JSON.
+
+use scripting additions
+
+property presetData : "{{SETTINGS_JSON}}" -- JSON produced by the app (must include "codec": "hevc"|"h264"|"bypass")
+property mrhevcBundleID : "{{BUNDLE_ID}}"
+property mrhevcAppPath : "{{APP_PATH}}"
+property presetName : "{{PRESET_NAME}}"
+
+on open droppedItems
+    -- Filter for mov/mp4 files (case-insensitive)
+    set inputFiles to my filterAcceptableFiles(droppedItems)
+    if (count of inputFiles) is 0 then
+        display dialog "No compatible media dropped. Please drop .mov or .mp4 files." buttons {"OK"} default button 1 with icon caution giving up after 6
+        return
+    end if
+
+    -- Locate MrHEVC app (by bundle id)
+    set mrhevcPath to my findMrHEVCApp()
+    set mrhevcExecutable to mrhevcPath & "/Contents/MacOS/MrHEVC"
+
+    -- Create temporary preset file (HFS path)
+    set tempFolder to (path to temporary items folder as string)
+    set tempPresetFile to tempFolder & "mrhevc_droplet_" & (do shell script "uuidgen") & ".json"
+    set shellCommand to ""
+    set execCommand to ""
+
+    set debugLogPath to "/tmp/mrhevc_droplet_debug.log"
+
+    try
+        -- Write embedded preset JSON to temp file
+        set fileRef to open for access file tempPresetFile with write permission
+        set eof of fileRef to 0
+        write presetData to fileRef
+        close access fileRef
+
+        -- Build file list for the CLI
+        set fileArgs to my joinQuoted(inputFiles)
+
+        -- Build the CLI command line
+        -- If your app uses another flag name, change "--preset-file" accordingly.
+        set shellCommand to quoted form of mrhevcExecutable & " --cli --preset-file " & quoted form of (POSIX path of tempPresetFile) & fileArgs
+        set execCommand to shellCommand & " 2>&1"
+
+        -- (Optional) debug: record the command
+        my appendToLog(debugLogPath, "MrHEVC Droplet: Executing:")
+        my appendToLog(debugLogPath, shellCommand)
+
+        -- Execute (blocks until complete)
+        set cliResult to do shell script execCommand
+
+        -- Log the result
+        if cliResult is not "" then
+            my appendToLog(debugLogPath, "CLI Result: " & cliResult)
+        end if
+
+        my showSuccessResult(cliResult, presetName, (count of inputFiles))
+
+        -- Clean up temp file
+        try
+            do shell script "/bin/rm -f " & quoted form of (POSIX path of tempPresetFile)
+        end try
+
+    on error errMsg number errNum partial result partialResult
+        -- Ensure file handle is closed if we errored while writing
+        try
+            close access file tempPresetFile
+        end try
+        -- Clean up temp file on error too
+        try
+            do shell script "/bin/rm -f " & quoted form of (POSIX path of tempPresetFile)
+        end try
+        my appendToLog(debugLogPath, "CLI Failed (exit " & errNum & "): " & errMsg)
+        if partialResult is not missing value then
+            my appendToLog(debugLogPath, "Partial output: " & partialResult)
+        end if
+        my showDetailedFailure(errNum, errMsg, partialResult, shellCommand, debugLogPath)
+    end try
+end open
+
+-- MARK: - Helpers for CLI logging & error presentation
+
+on appendToLog(logPath, message)
+    try
+        do shell script "/bin/echo " & quoted form of message & " >> " & quoted form of logPath
+    on error
+        -- ignore logging failures
+    end try
+end appendToLog
+
+on showDetailedFailure(errNum, errMsg, partialResult, shellCommand, logPath)
+    set exitCode to errNum
+    if exitCode < 0 then set exitCode to exitCode * -1
+    set partialText to ""
+    if partialResult is not missing value then
+        set partialText to partialResult as text
+    end if
+
+    set combinedOutput to errMsg as text
+    if partialText is not "" then
+        set combinedOutput to combinedOutput & return & return & partialText
+    end if
+
+    set truncatedSummary to my truncateForDialog(combinedOutput)
+    set fullDetails to "Command:\n" & shellCommand & "\n\nExit code: " & exitCode & "\n\nOutput:\n" & combinedOutput & "\n\nDebug log: " & logPath
+
+    set dialogText to "The MrHEVC droplet encountered an error (exit " & exitCode & ")." & return & return & truncatedSummary & return & return & "A full log is available at " & logPath & "."
+
+    set buttonChoice to button returned of (display dialog dialogText buttons {"Copy Details", "OK"} default button "OK" with icon stop)
+    if buttonChoice is "Copy Details" then
+        set the clipboard to fullDetails
+    end if
+end showDetailedFailure
+
+on truncateForDialog(theText)
+    set summary to theText as text
+    set maxLen to 900
+    if (length of summary) > maxLen then
+        return text 1 thru maxLen of summary & "…"
+    else
+        return summary
+    end if
+end truncateForDialog
+
+on showSuccessResult(cliOutput, presetName, itemCount)
+    if cliOutput contains "Cancelled:" and cliOutput contains "Successful: 0" then
+        display dialog "Encoding cancelled by user." buttons {"OK"} default button "OK" with icon caution
+        return
+    end if
+
+    set fileWord to "file"
+    if itemCount > 1 then set fileWord to "files"
+    set summary to "Processed " & itemCount & " " & fileWord
+
+    set jobID to missing value
+    try
+        if cliOutput contains "Job IDs:" then
+            set oldDelims to AppleScript's text item delimiters
+            set AppleScript's text item delimiters to {"Job IDs:"}
+            set tailText to text item 2 of cliOutput
+            set AppleScript's text item delimiters to {return, linefeed}
+            set firstLine to text item 1 of tailText
+            set AppleScript's text item delimiters to {","}
+            set components to text items of firstLine
+            set cleaned to {}
+            repeat with token in components
+                set tokenText to my trimText(token as text)
+                if tokenText is not "" then set end of cleaned to tokenText
+            end repeat
+            if (count of cleaned) is greater than 0 then
+                set jobID to "Job IDs: " & (item 1 of cleaned)
+                if (count of cleaned) > 1 then
+                    repeat with idx from 2 to count of cleaned
+                        set jobID to jobID & ", " & (item idx of cleaned)
+                    end repeat
+                end if
+            end if
+            set AppleScript's text item delimiters to oldDelims
+        else if cliOutput contains "Submitted as job:" then
+            set oldDelims to AppleScript's text item delimiters
+            set AppleScript's text item delimiters to {"Submitted as job:"}
+            set tailText to text item 2 of cliOutput
+            set AppleScript's text item delimiters to {return, linefeed}
+            set firstLine to text item 1 of tailText
+            set AppleScript's text item delimiters to {" ", tab}
+            set components to text items of firstLine
+            repeat with token in components
+                set tokenText to my trimText(token as text)
+                if tokenText is not "" then
+                    set jobID to "Job ID: " & tokenText
+                    exit repeat
+                end if
+            end repeat
+            set AppleScript's text item delimiters to oldDelims
+        end if
+    end try
+
+    if jobID is not missing value then
+        display notification jobID with title presetName subtitle "MrHEVC Droplet"
+        display dialog "Deadline submission complete." & return & return & jobID buttons {"OK"} default button "OK" with icon note
+    else if (cliOutput contains "Cancelled:" ) and (cliOutput contains "Successful: 0") then
+        display dialog "Encoding cancelled by user." buttons {"OK"} default button "OK" with icon caution
+    else
+        display notification summary with title presetName subtitle "MrHEVC Droplet"
+        display dialog summary buttons {"OK"} default button "OK" with icon note
+    end if
+end showSuccessResult
+
+on trimText(theText)
+    set value to theText as text
+    set whitespaceChars to {space, tab, return, linefeed}
+    repeat while value is not "" and whitespaceChars contains first character of value
+        set value to text 2 thru -1 of value
+    end repeat
+    repeat while value is not "" and whitespaceChars contains last character of value
+        set value to text 1 thru -2 of value
+    end repeat
+    return value
+end trimText
+
+-- Show info dialog when droplet is double-clicked
+on run
+    set dialogText to "MrHEVC droplet for preset:" & return & "  • " & presetName & return & return & ¬
+        "Drag .mov or .mp4 files onto this app to encode them using the saved preset." & return & return & ¬
+        "Codec selection (H.264 / H.265 / No Recompression) is stored in the preset."
+    display dialog dialogText buttons {"OK"} default button 1 with icon note giving up after 10
+end run
+
+-- Accept .mov/.mp4, case-insensitive
+on filterAcceptableFiles(droppedItems)
+    set outList to {}
+    repeat with anItem in droppedItems
+        set p to POSIX path of anItem
+        ignoring case
+            if p ends with ".mov" or p ends with ".mp4" then
+                set end of outList to p
+            end if
+        end ignoring
+    end repeat
+    return outList
+end filterAcceptableFiles
+
+-- Find installed MrHEVC by bundle id
+on findMrHEVCApp()
+    if mrhevcAppPath is not "" then
+        try
+            set appAlias to POSIX file mrhevcAppPath as alias
+            return mrhevcAppPath
+        on error
+            -- stored path invalid, fall back to search
+        end try
+    end if
+    try
+        set appPath to do shell script "mdfind 'kMDItemCFBundleIdentifier == \"" & mrhevcBundleID & "\"' | head -1"
+        if appPath is not "" then return appPath
+    end try
+    error "MrHEVC application not found (bundle id: " & mrhevcBundleID & ")."
+end findMrHEVCApp
+
+-- Quote every argument (POSIX paths) and join into a single string with leading spaces
+on joinQuoted(posixPathList)
+    set out to ""
+    repeat with p in posixPathList
+        set out to out & " " & quoted form of p
+    end repeat
+    return out
+end joinQuoted

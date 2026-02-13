@@ -1,0 +1,104 @@
+{
+  "fill-specializations" : [
+    {
+      "value" : {
+        "linear-gradient" : [
+          "srgb:0.00000,0.63513,0.84348,1.00000",
+          "srgb:0.00000,0.23789,0.39621,1.00000"
+        ],
+        "orientation" : {
+          "start" : {
+            "x" : 0.5,
+            "y" : 0
+          },
+          "stop" : {
+            "x" : 0.5,
+            "y" : 0.7
+          }
+        }
+      }
+    },
+    {
+      "appearance" : "dark",
+      "value" : {
+        "linear-gradient" : [
+          "srgb:0.00000,0.23789,0.39621,1.00000",
+          "srgb:0.00000,0.08870,0.14774,1.00000"
+        ],
+        "orientation" : {
+          "start" : {
+            "x" : 0.5,
+            "y" : 0
+          },
+          "stop" : {
+            "x" : 0.5,
+            "y" : 0.7
+          }
+        }
+      }
+    }
+  ],
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "image-name" : "circleSmall.png",
+          "name" : "circleSmall",
+          "position" : {
+            "scale" : 0.9,
+            "translation-in-points" : [
+              0,
+              -562.5
+            ]
+          }
+        },
+        {
+          "blend-mode" : "normal",
+          "fill" : {
+            "solid" : "srgb:0.48000,0.87000,1.00000,1.00000"
+          },
+          "glass" : false,
+          "hidden" : false,
+          "image-name" : "circleBig.png",
+          "name" : "circleBig",
+          "opacity" : 0.35,
+          "position" : {
+            "scale" : 0.9,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "glass" : false,
+          "hidden" : true,
+          "image-name" : "circles.png",
+          "name" : "MrHEVC",
+          "position" : {
+            "scale" : 0.9,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

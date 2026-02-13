@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+    <!-- Ensure icon comes from Assets.xcassets/AppIcon.appiconset -->
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
+
+    <!-- Let Finder drop movies + folders onto the droplet -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Movies and Folders</string>
+
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
+
+            <key>LSItemContentTypes</key>
+            <array>
+                <!-- movies -->
+                <string>public.movie</string>
+                <string>public.video</string>
+                <string>com.apple.quicktime-movie</string>
+                <string>public.mpeg-4</string>
+                <string>public.audiovisual-content</string>
+
+                <!-- folders -->
+                <string>public.folder</string>
+                <string>public.directory</string>
+            </array>
+        </dict>
+    </array>
+
+</dict>
+</plist>

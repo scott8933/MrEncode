@@ -1,0 +1,5 @@
+project: MrEncode.xcodeproj
+schemes:
+- MrEncode
+targets:
+- MrEncode

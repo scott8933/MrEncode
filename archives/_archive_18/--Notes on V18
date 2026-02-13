@@ -1,0 +1,20 @@
+Notes on V18
+
+This version has just-fixed progress bars checked locally at least.
+Progress now reflects actual estimated time (had been tied to Media Duration)
+UI elements all working as intended
+
+No apparent functional bugs.
+
+
+
+Next steps:
+-add Hider for General options
+-add log messaging mechanism
+-need to straighten out how we deal with Selected/Done, Selected/Unqued, and our Queue Selected button
+-adjust design of Queued info i.e. what we see in Basic vs Detailed views
+
+-Check that Deadline is still working
+-Figure out how we deal with Deadline job labels
+
+-Prefs, make sure we save Overlay positions, window sizes, queue window sizes etc
