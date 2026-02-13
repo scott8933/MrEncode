@@ -666,9 +666,6 @@ final class AppState: ObservableObject {
             dropletSettings.group = resolved(baseSettings.group, dropletSettings.group, prefs.stickyGroup)
         }
 
-        #if DEBUG
-        print("[DropletExport] runMode=\(dropletSettings.runMode) pool=\(dropletSettings.pool) secondary=\(dropletSettings.secondaryPool) group=\(dropletSettings.group)")
-        #endif
 
         if dropletSettings.runMode == .remoteDeadline && !dropletSettings.deadlinePoolsValid {
             pushMessage(

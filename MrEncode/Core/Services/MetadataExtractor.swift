@@ -83,9 +83,6 @@ enum MetadataExtractor {
             out.startTimecode = tc
         }
 
-        #if DEBUG
-        if let p = out.colorPrimaries, let t = out.transferFunction, let m = out.ycbcrMatrix {
-            print("MetadataExtractor NCLC: [\(p), \(t), \(m)] for \(url.lastPathComponent)")
         }
         #endif
 
