@@ -20,7 +20,6 @@ struct MrEncodeApp: App {
                 .task {
                     if !appState.didBootstrapDeadline {
                         appState.bootstrapDeadlineLists()
-                        NSLog("MrEncode: bootstrapDeadlineLists() ran")
                     }
                 }
                 .onAppear {
@@ -79,7 +78,6 @@ struct MrEncodeApp: App {
         try? FileManager.default.removeItem(atPath: requestPath)
 
 
-        NSLog("MrEncode: RunRequest mode detected - preset: \(request.presetName), inputs: \(request.inputPaths.count)")
 
         do {
             let decoder = JSONDecoder()
@@ -96,10 +94,8 @@ struct MrEncodeApp: App {
             // Persist/update preset locally using the decoded Settings snapshot
             try PresetManager.shared.savePreset(name: request.presetName, settings: env.settings)
             
-            NSLog("MrEncode: RunRequest preset persisted: %@", request.presetName)
 
         } catch {
-            NSLog("MrEncode: Failed to decode/persist RunRequest preset '\(request.presetName)': \(error)")
         }
 
         // Enable droplet mode in the UI (uses presetName, exit semantics)
@@ -158,7 +154,6 @@ struct MrEncodeApp: App {
 
             // Skip-only drop: nothing importable was added → quit.
             if items.isEmpty {
-                NSLog("MrEncode: Ingest group \(request.ingestGroupID) imported 0 media; quitting (skip policy).")
                 NSApp.terminate(nil)
                 return
             }
@@ -168,7 +163,6 @@ struct MrEncodeApp: App {
             if readyToEncode {
                 self.appState.submit()
             } else {
-                NSLog("MrEncode: Ingest group \(request.ingestGroupID) has no queued+checked media; quitting.")
                 NSApp.terminate(nil)
                 return
             }
@@ -178,13 +172,11 @@ struct MrEncodeApp: App {
                 let now = groupItems()
 
                 if now.isEmpty {
-                    NSLog("MrEncode: Ingest group \(request.ingestGroupID) items disappeared; quitting.")
                     NSApp.terminate(nil)
                     return
                 }
 
                 if now.allSatisfy({ isTerminal($0.status) }) {
-                    NSLog("MrEncode: Ingest group \(request.ingestGroupID) complete; quitting.")
                     NSApp.terminate(nil)
                     return
                 }

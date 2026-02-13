@@ -21,11 +21,9 @@ final class SoundManager {
         let ext = "wav"
 
         guard let url = Bundle.main.url(forResource: name, withExtension: ext) else {
-            NSLog("MrEncode SoundManager: NOT FOUND in bundle: \(name).\(ext)")
             return
         }
 
-        // NSLog("MrEncode SoundManager: will play \(url.lastPathComponent)")
 
         do {
             let p = try AVAudioPlayer(contentsOf: url)
@@ -41,11 +39,9 @@ final class SoundManager {
             p.prepareToPlay()
             let ok = p.play()
 
-            // NSLog("MrEncode SoundManager: play() returned \(ok)")
 
             self.player = p // retain during playback
         } catch {
-            // NSLog("MrEncode SoundManager: FAILED to init AVAudioPlayer: \(error)")
         }
     }
 }

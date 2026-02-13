@@ -103,7 +103,6 @@ class AppCore: ObservableObject {
         suppressBatchDoneChime = flags.suppressChime
 
         if suppressBatchDoneChime {
-            NSLog("MrEncode: Batch done chime suppressed via CLI flag (args=\(arguments))")
         }
     }
 
@@ -1113,7 +1112,6 @@ class AppCore: ObservableObject {
     
     @MainActor
     private func checkBatchDoneChime() {
-        NSLog("MrEncode checkBatchDoneChime: entered didSubmit=\(didSubmitBatchEncode) didPlay=\(didPlayBatchDoneChime) files=\(files.count)")
 
         guard didSubmitBatchEncode, !didPlayBatchDoneChime else { return }
         guard !files.isEmpty else { return }
@@ -1121,12 +1119,10 @@ class AppCore: ObservableObject {
         let active = files.filter { $0.status == .encoding }
         let queuedChecked = files.filter { $0.status == .queued && $0.isChecked }
 
-        NSLog("MrEncode checkBatchDoneChime: active=\(active.count) queuedChecked=\(queuedChecked.count)")
 
         let hasActiveOrQueued = !active.isEmpty || !queuedChecked.isEmpty
         guard !hasActiveOrQueued else { return }
 
-        NSLog("MrEncode checkBatchDoneChime: TRIGGERING CHIME")
 
         didPlayBatchDoneChime = true
         didSubmitBatchEncode = false
