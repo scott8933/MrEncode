@@ -18,43 +18,32 @@ final class Metal42210Converter {
     private var textureCache: CVMetalTextureCache?
     
     init?() {
-        @inline(__always) func LOG(_ s: String) {
             fputs(s + "\n", stderr)
         }
 
         guard let dev = MTLCreateSystemDefaultDevice() else {
-            LOG("❌ Metal42210Converter: MTLCreateSystemDefaultDevice() returned nil")
             return nil
         }
-        LOG("✅ Metal42210Converter: got Metal device: \(dev.name)")
 
         guard let queue = dev.makeCommandQueue() else {
-            LOG("❌ Metal42210Converter: dev.makeCommandQueue() returned nil")
             return nil
         }
-        LOG("✅ Metal42210Converter: made command queue")
 
         guard let library = dev.makeDefaultLibrary() else {
-            LOG("❌ Metal42210Converter: dev.makeDefaultLibrary() returned nil (Metal shader not in this target?)")
             return nil
         }
-        LOG("✅ Metal42210Converter: got default library")
 
         let kernelName = "bgra_to_p210_709_fullrange"
         guard let kernel = library.makeFunction(name: kernelName) else {
-            LOG("❌ Metal42210Converter: kernel not found in default library: \(kernelName)")
             return nil
         }
-        LOG("✅ Metal42210Converter: found kernel \(kernelName)")
 
         let pipeline: MTLComputePipelineState
         do {
             pipeline = try dev.makeComputePipelineState(function: kernel)
         } catch {
-            LOG("❌ Metal42210Converter: makeComputePipelineState failed: \(error)")
             return nil
         }
-        LOG("✅ Metal42210Converter: created compute pipeline state")
 
         self.device = dev
         self.commandQueue = queue
@@ -63,9 +52,7 @@ final class Metal42210Converter {
         // Pre-create texture cache (reused across frames)
         let rc = CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, dev, nil, &textureCache)
         if rc != kCVReturnSuccess {
-            LOG("⚠️ Metal42210Converter: CVMetalTextureCacheCreate returned \(rc) (continuing)")
         } else {
-            LOG("✅ Metal42210Converter: created texture cache")
         }
     }
 
