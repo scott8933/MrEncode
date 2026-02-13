@@ -1,0 +1,15 @@
+# Archives and build artifacts
+archives/
+*.zip
+*.dmg
+
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+.DS_Store
+
+# SwiftPM
+.swiftpm/
+*.xcodeproj/
