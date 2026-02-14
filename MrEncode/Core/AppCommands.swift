@@ -75,16 +75,12 @@ struct MrEncodeCommands: Commands {
                     NSWorkspace.shared.open(url)
                 }
             }
-            
-             Button("Debug ▸ Export Droplet JSON") {
-                DebugDropletExporter.export()
-             }
 
             // Optional: quick access to your log window from Help
-            // Divider()
-            // Button("Open Log Window") {
-            //     openWindow(id: "log-viewer")
-            // }
+            Divider()
+            Button("Open Log Window") {
+                openWindow(id: "log-viewer")
+            }
         }
     }
 }

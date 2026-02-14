@@ -22,10 +22,12 @@ enum UIThemeSelection: String, CaseIterable, Codable, Identifiable {
 // MARK: - Encoding settings
 
 public enum VideoCodec: String, Codable, CaseIterable {
-    case hevc
-    case h264
-    case bypass
+    case hevc422   // H.265 4:2:2 10-bit (Main42210)
+    case hevc420   // H.265 4:2:0 10-bit (Main10)
+    case h264        // H.264
+    case bypass      // No Recompression
 }
+
 
 
 // MARK: - Run Mode

@@ -13,7 +13,7 @@ struct UI_CompressionOptions: View {
     private let itemGap: CGFloat = 2
     private var groupGap: CGFloat = 30
     private let modePickerWidth: CGFloat = 220
-    private let qualitySliderMaxWidth: CGFloat = 210
+    private let qualitySliderMaxWidth: CGFloat = 400
 
     
     var body: some View {
@@ -59,8 +59,9 @@ struct UI_CompressionOptions: View {
                                     .fixedSize(horizontal: true, vertical: false)
 
                                 Picker("", selection: $state.settings.codec) {
-                                    Text("H.265 (HEVC)").tag(VideoCodec.hevc)
-                                    Text("H.264 (AVC)").tag(VideoCodec.h264)
+                                    Text("H.265 4:2:2 (Highest Quality)").tag(VideoCodec.hevc422)
+                                    Text("H.265 4:2:0 (More Compatible)").tag(VideoCodec.hevc420)
+                                    Text("H.264 (Most Compatible)").tag(VideoCodec.h264)
                                     Text("No Recompression").tag(VideoCodec.bypass)
                                 }
                                 .pickerStyle(.menu)
@@ -170,7 +171,7 @@ struct UI_CompressionOptions: View {
             // Pass-through: clear
             state.settings.outputSuffix = ""
 
-        case .hevc:
+        case .hevc420, .hevc422:
             state.settings.outputSuffix = (state.settings.containerFormat == .mp4)
                 ? ""
                 : applySuggestedSeparator("HEVC", settings: state.settings)
@@ -189,7 +190,7 @@ struct UI_CompressionOptions: View {
     private var inactive: Bool { !state.settings.generalExpanded }
     private var qualityCodecLabel: String {
         switch state.settings.codec {
-        case .hevc: return "H.265"
+        case .hevc422, .hevc420: return "H.265"
         case .h264: return "H.264"
         case .bypass: return "—"
         }
@@ -197,19 +198,23 @@ struct UI_CompressionOptions: View {
 
     private var suffixPlaceholder: String {
         if isBypass { return "Optional (No Recompression)" }
+
         switch state.settings.codec {
-        case .hevc:
-            return state.settings.containerFormat == .mp4
+        case .hevc422, .hevc420:
+            return (state.settings.containerFormat == .mp4)
                 ? "Optional for MP4"
                 : applySuggestedSeparator("HEVC", settings: state.settings)
+
         case .h264:
-            return state.settings.containerFormat == .mp4
+            return (state.settings.containerFormat == .mp4)
                 ? "Optional for MP4"
                 : applySuggestedSeparator("H264", settings: state.settings)
+
         case .bypass:
             return "Optional (No Recompression)"
         }
     }
+
 
     private var exampleOutputName: String {
         let base = state.files.first?.url.deletingPathExtension().lastPathComponent ?? "myfile"
@@ -217,29 +222,33 @@ struct UI_CompressionOptions: View {
 
         let current = state.settings.outputSuffix.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        let suggestedToken: String = {
+            if state.settings.bypassHEVC { return "" }
+
+            switch state.settings.codec {
+            case .hevc420, .hevc422:
+                return (state.settings.containerFormat == .mp4) ? "" : "HEVC"
+            case .h264:
+                return (state.settings.containerFormat == .mp4) ? "" : "H264"
+            case .bypass:
+                return ""
+            }
+        }()
+
         let shownSuffix: String
-        if isBypass {
+        if state.settings.bypassHEVC {
             shownSuffix = ""
         } else if !current.isEmpty {
             shownSuffix = current
+        } else if suggestedToken.isEmpty {
+            shownSuffix = ""
         } else {
-            // Preview-only suggestion (NO state mutation)
-            switch state.settings.codec {
-            case .hevc:
-                shownSuffix = (state.settings.containerFormat == .mp4)
-                    ? ""
-                    : applySuggestedSeparator("HEVC", settings: state.settings)
-            case .h264:
-                shownSuffix = (state.settings.containerFormat == .mp4)
-                    ? ""
-                    : applySuggestedSeparator("H264", settings: state.settings)
-            case .bypass:
-                shownSuffix = ""
-            }
+            shownSuffix = applySuggestedSeparator(suggestedToken, settings: state.settings)
         }
 
         return "\(base)\(shownSuffix).\(ext)"
     }
+
 
     
     private var qualityPercent: Int {
@@ -267,14 +276,11 @@ struct UI_CompressionOptions: View {
     // MARK: Mode application
 
     func applyMode(_ newMode: VideoCodec, initializing: Bool = false) {
-        // New rule: dropdown change always wins.
-        // - bypass: clear
-        // - hevc/h264: reset to default for that codec (container-dependent)
         switch newMode {
         case .bypass:
             state.settings.outputSuffix = ""
 
-        case .hevc:
+        case .hevc420, .hevc422:
             state.settings.outputSuffix = (state.settings.containerFormat == .mp4)
                 ? ""
                 : applySuggestedSeparator("HEVC", settings: state.settings)
@@ -287,46 +293,21 @@ struct UI_CompressionOptions: View {
     }
 
     private func adaptSuffixForContainerAndCodec(container: ContainerFormat, codec: VideoCodec) {
-        // New rule: container dropdown change also resets suffix appropriately.
         switch codec {
         case .bypass:
             state.settings.outputSuffix = ""
-        case .hevc:
-            state.settings.outputSuffix = (state.settings.containerFormat == .mp4)
+
+        case .hevc420, .hevc422:
+            state.settings.outputSuffix = (container == .mp4)
                 ? ""
                 : applySuggestedSeparator("HEVC", settings: state.settings)
 
         case .h264:
-            state.settings.outputSuffix = (state.settings.containerFormat == .mp4)
+            state.settings.outputSuffix = (container == .mp4)
                 ? ""
                 : applySuggestedSeparator("H264", settings: state.settings)
         }
     }
 
+
 }
-
-
-
-
-
-/*
- 
- // Preview in Xcode
- // commented out, its typically faster to just compile the app
- 
-fileprivate extension String {
-    func equalsCaseInsensitive(_ other: String) -> Bool {
-        self.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(other) == .orderedSame
-    }
-}
-
-
-
-#Preview("Compression Options") {
-    UI_CompressionOptions()
-        .environmentObject(AppState.preview)
-        .frame(width: 640)
-        .padding()
-}
- 
-*/

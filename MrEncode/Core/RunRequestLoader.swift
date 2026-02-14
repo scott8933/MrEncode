@@ -14,6 +14,7 @@ enum RunRequestLoader {
     static func enqueue(path: String) {
         let url = URL(fileURLWithPath: path)
         guard let data = try? Data(contentsOf: url) else {
+            NSLog("MrEncode: RunRequestLoader failed to read \(path)")
             return
         }
 
@@ -22,7 +23,9 @@ enum RunRequestLoader {
         do {
             let req = try decoder.decode(DropletRunRequest.self, from: data)
             pending = (path: path, request: req)
+            NSLog("MrEncode: RunRequestLoader enqueued request (\(req.inputPaths.count) path(s))")
         } catch {
+            NSLog("MrEncode: RunRequestLoader invalid request: \(error)")
         }
     }
 

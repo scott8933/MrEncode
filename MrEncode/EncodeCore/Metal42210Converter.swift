@@ -11,50 +11,36 @@ import Metal
 import CoreVideo
 import AVFoundation
 
-final class Metal42210Converter {
+final class Metal42210Converter: PixelConverter {
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private let pipelineState: MTLComputePipelineState
     private var textureCache: CVMetalTextureCache?
     
-    init?() {
-            fputs(s + "\n", stderr)
-        }
+    init?(kernelName: String) {
+        guard let d = MTLCreateSystemDefaultDevice(),
+              let q = d.makeCommandQueue()
+        else { return nil }
 
-        guard let dev = MTLCreateSystemDefaultDevice() else {
-            return nil
-        }
+        self.device = d
+        self.commandQueue = q
 
-        guard let queue = dev.makeCommandQueue() else {
-            return nil
-        }
+        guard let lib = d.makeDefaultLibrary(),
+              let fn  = lib.makeFunction(name: kernelName)
+        else { return nil }
 
-        guard let library = dev.makeDefaultLibrary() else {
-            return nil
-        }
-
-        let kernelName = "bgra_to_p210_709_fullrange"
-        guard let kernel = library.makeFunction(name: kernelName) else {
-            return nil
-        }
-
-        let pipeline: MTLComputePipelineState
         do {
-            pipeline = try dev.makeComputePipelineState(function: kernel)
+            self.pipelineState = try d.makeComputePipelineState(function: fn)
         } catch {
             return nil
         }
 
-        self.device = dev
-        self.commandQueue = queue
-        self.pipelineState = pipeline
-
-        // Pre-create texture cache (reused across frames)
-        let rc = CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, dev, nil, &textureCache)
-        if rc != kCVReturnSuccess {
-        } else {
-        }
+        var cache: CVMetalTextureCache?
+        CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, d, nil, &cache)
+        self.textureCache = cache
     }
+
+
 
     
     func convert(srcPB: CVPixelBuffer, dstPB: CVPixelBuffer) -> Bool {

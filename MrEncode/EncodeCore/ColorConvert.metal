@@ -41,7 +41,7 @@ inline void chroma_limited_at(
     crL = toLimitedC10(cr);
 }
 
-kernel void bgra_to_p210_709_fullrange(
+kernel void bgra_to_p210_709_videorange(
     texture2d<float, access::sample> src    [[texture(0)]],
     texture2d<float, access::write>  dstY   [[texture(1)]],  // r16Unorm
     texture2d<float, access::write>  dstUV  [[texture(2)]],  // rg16Unorm
@@ -86,6 +86,59 @@ kernel void bgra_to_p210_709_fullrange(
         float crF = (2.0 * crm1 + 4.0 * cr0 + 1.0 * cr1 + 1.0 * cr2) * 0.125;
 
         uint2 uvCoord = uint2(gid.x >> 1, gid.y);
+        dstUV.write(float4(clamp(cbF, 0.0, 1.0), clamp(crF, 0.0, 1.0), 0.0, 1.0), uvCoord);
+    }
+}
+
+
+// -----------------------------------------------------------------------------
+// P010 (4:2:0 10-bit bi-planar, video-range) converter
+// One thread per luma pixel. UV is written on even-even pixels into (w/2,h/2).
+// Uses a simple 2x2 average for chroma (stable baseline).
+// -----------------------------------------------------------------------------
+
+kernel void bgra_to_p010_709_videorange(
+    texture2d<float, access::sample> src    [[texture(0)]],
+    texture2d<float, access::write>  dstY   [[texture(1)]],  // r16Unorm
+    texture2d<float, access::write>  dstUV  [[texture(2)]],  // rg16Unorm
+    uint2 gid [[thread_position_in_grid]]
+) {
+    uint w = src.get_width();
+    uint h = src.get_height();
+    if (gid.x >= w || gid.y >= h) return;
+
+    // Center pixel -> luma
+    float4 bgra = src.read(gid);
+    float3 rgb  = RGB_FROM_BGRA(bgra);
+    float y, cb, cr;
+    rgb_to_ycbcr_709_full(rgb, y, cb, cr);
+
+    float yL = toLimitedY10(y);
+    dstY.write(float4(yL, 0.0, 0.0, 1.0), gid);
+
+    // UV (4:2:0) at even-even pixels
+    if (((gid.x & 1u) == 0u) && ((gid.y & 1u) == 0u)) {
+        uint x0 = gid.x;
+        uint y0 = gid.y;
+
+        // Sample a 2x2 block with clamping at edges
+        uint x1 = min(x0 + 1u, w - 1u);
+        uint y1 = min(y0 + 1u, h - 1u);
+
+        float cb00, cr00;
+        float cb10, cr10;
+        float cb01, cr01;
+        float cb11, cr11;
+
+        chroma_limited_at(src, uint2(x0, y0), cb00, cr00);
+        chroma_limited_at(src, uint2(x1, y0), cb10, cr10);
+        chroma_limited_at(src, uint2(x0, y1), cb01, cr01);
+        chroma_limited_at(src, uint2(x1, y1), cb11, cr11);
+
+        float cbF = (cb00 + cb10 + cb01 + cb11) * 0.25;
+        float crF = (cr00 + cr10 + cr01 + cr11) * 0.25;
+
+        uint2 uvCoord = uint2(gid.x >> 1, gid.y >> 1);
         dstUV.write(float4(clamp(cbF, 0.0, 1.0), clamp(crF, 0.0, 1.0), 0.0, 1.0), uvCoord);
     }
 }

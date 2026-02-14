@@ -666,7 +666,6 @@ final class AppState: ObservableObject {
             dropletSettings.group = resolved(baseSettings.group, dropletSettings.group, prefs.stickyGroup)
         }
 
-
         if dropletSettings.runMode == .remoteDeadline && !dropletSettings.deadlinePoolsValid {
             pushMessage(
                 level: .warning,

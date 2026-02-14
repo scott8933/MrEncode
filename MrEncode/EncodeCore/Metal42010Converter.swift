@@ -11,32 +11,37 @@ import Metal
 import CoreVideo
 import CoreMedia
 
-final class Metal42010Converter {
+final class Metal42010Converter: PixelConverter {
     private let device: MTLDevice
     private let queue: MTLCommandQueue
     private let pipeline: MTLComputePipelineState
     private var cache: CVMetalTextureCache?
 
-    init?() {
+    init?(kernelName: String) {
         guard let d = MTLCreateSystemDefaultDevice(),
               let q = d.makeCommandQueue()
         else { return nil }
 
         self.device = d
-        self.queue = q
+        self.queue  = q
 
-        // Load default library (add .metal file to target)
         guard let lib = d.makeDefaultLibrary(),
-              let fn = lib.makeFunction(name: "bgra_to_p010_709_videorange"),
-              let ps = try? d.makeComputePipelineState(function: fn)
+              let fn  = lib.makeFunction(name: kernelName)
         else { return nil }
 
-        self.pipeline = ps
+        do {
+            self.pipeline = try d.makeComputePipelineState(function: fn)
+        } catch {
+            return nil
+        }
+        
+        var tc: CVMetalTextureCache?
+        CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, d, nil, &tc)
+        self.cache = tc
 
-        var c: CVMetalTextureCache?
-        CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, d, nil, &c)
-        self.cache = c
     }
+
+
 
     /// Convert BGRA srcPB into dstPB (kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange).
     /// dstPB must be allocated from adaptor.pixelBufferPool (correct plane layout).

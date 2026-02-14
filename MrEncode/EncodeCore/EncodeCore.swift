@@ -139,7 +139,7 @@ enum EncodeCore {
         // 2) Baseline bpppf envelope per codec
         let bpppfRange: (low: Double, high: Double)
         switch settings.codec {
-        case .hevc:
+        case .hevc420, .hevc422:
             // Heavier midrange for perceptual parity vs Compressor.
             bpppfRange = (0.020, 0.090)
         case .h264:
@@ -148,13 +148,14 @@ enum EncodeCore {
             bpppfRange = (0.060, 0.160)
         }
 
+
         // 3) Midrange gamma shaping (lifts 75% without inflating endpoints)
         let shapedQ = pow(q, 0.70)
         var bpppf  = bpppfRange.low + (bpppfRange.high - bpppfRange.low) * shapedQ
 
         // Gaussian midrange lift (HEVC only) — pushes "75%" perceptual quality
         // upward without excessively inflating endpoints.
-        if settings.codec == .hevc {
+        if settings.codec == .hevc420 || settings.codec == .hevc422 {
             let center     = 0.75
             let width      = 0.18
             let x          = (q - center) / width
@@ -166,9 +167,9 @@ enum EncodeCore {
         // 4) Floor protection — 0% is still usable
         let bpppfFloor: Double
         switch settings.codec {
-        case .hevc:    bpppfFloor = 0.005
-        case .h264:    bpppfFloor = 0.025
-        case .bypass:  bpppfFloor = 0.025
+        case .hevc420, .hevc422: bpppfFloor = 0.005
+        case .h264:              bpppfFloor = 0.025
+        case .bypass:            bpppfFloor = 0.025
         }
         bpppf = max(bpppf, bpppfFloor)
 
@@ -185,80 +186,120 @@ enum EncodeCore {
         let bitsPerSec = pxPerFrame * fps * bpppf
 
         // 7) Clamp with a bpppf-derived max (resolution/fps aware)
-        let maxBpppf: Double = (settings.codec == .hevc) ? 1.0 : 1.5
+        let isHEVC = (settings.codec == .hevc420 || settings.codec == .hevc422)
+        let maxBpppf: Double = isHEVC ? 1.0 : 1.5
         let maxBps   = pxPerFrame * fps * maxBpppf
 
         return Int(min(max(bitsPerSec, 100_000.0), maxBps))
     }
-
+    
     // MARK: - Codec & compression properties
 
     /// Returns (AVVideoCodecKey value, optional profile-level string).
     ///
-    /// TEST BUILD: Hardwired HEVC Main 4:2:2 10-bit.
-    /// This ignores Settings.codec on purpose to force a 4:2:2 pipeline end-to-end.
+    /// NOTE: This is now descriptor-driven. Settings.codec only influences the *default* pipeline choice
+    /// (via EncodePipelineDescriptor.defaultID(for:)), but the actual codec/profile come from the pipeline.
     static func vtCodecSettings(settings: Settings) -> (codecKey: String, profileLevel: String?) {
-        return (
-            AVVideoCodecType.hevc.rawValue,
-            (kVTProfileLevel_HEVC_Main42210_AutoLevel as String)
-        )
+        // Keep this for any legacy call sites. The new path should prefer pipeline.codec/profileLevelVT.
+        switch settings.codec {
+        case .h264:
+            return (AVVideoCodecType.h264.rawValue, nil)
+
+        case .hevc420:
+            return (AVVideoCodecType.hevc.rawValue, (kVTProfileLevel_HEVC_Main10_AutoLevel as String))
+
+        case .hevc422:
+            return (AVVideoCodecType.hevc.rawValue, (kVTProfileLevel_HEVC_Main42210_AutoLevel as String))
+
+        case .bypass:
+            return (AVVideoCodecType.h264.rawValue, nil)
+        }
+    }
+    
+    // Settings stores CRF [14...30] for preset compatibility.
+    // Convert to user-facing Quality Index [0...100] where higher = better.
+    static func qualityIndexFromSettings(_ settings: Settings) -> Double {
+        let crfMin = 14
+        let crfMax = 30
+        let crf = min(max(settings.qualityCRF, crfMin), crfMax)
+
+        let t = Double(crf - crfMin) / Double(crfMax - crfMin) // 0(best)..1(worst)
+        let q = 1.0 - t                                        // 1(best)..0(worst)
+        return q * 100.0
     }
 
 
-    /// Build the full video-input settings dictionary.
-    /// Peak is 6× the raw bitrate. Quality hint is slider-mapped (0.75–1.0).
+    /// Build the full video-input settings dictionary (pipeline-driven).
+    /// Peak is 6× the raw bitrate (H.264 only). Quality hint is pipeline-mapped.
     /// No pixel-transfer override — let VT pick its own defaults.
-    static func videoInputSettings(settings: Settings, width: Int, height: Int, fps: Double) -> [String: Any] {
-        let (codecKey, profileLevel) = vtCodecSettings(settings: settings)
-        let bitrate = estimateBitrate(settings: settings, width: width, height: height, fps: fps)
+    static func videoInputSettings(
+        settings: Settings,
+        width: Int,
+        height: Int,
+        fps: Double,
+        pipeline: EncodePipelineDescriptor
+    ) -> [String: Any] {
 
-        var compressionProps: [String: Any] = [
-            AVVideoAverageBitRateKey:       bitrate,
-            AVVideoAllowFrameReorderingKey: true,
-            AVVideoMaxKeyFrameIntervalKey:  max(1, Int(round(fps * 10.0)))
-        ]
-
-        if let pl = profileLevel {
-            compressionProps[AVVideoProfileLevelKey] = pl
-        }
-
-        // DataRateLimits is not supported for all HEVC encoders (can crash at writer input init).
-        // Keep it for H.264 only.
-        // DataRateLimits can be unsupported for HEVC encoders (and can crash at AVAssetWriterInput init).
-        if settings.codec == .h264 {
-            let peakBps = Int(Double(bitrate) * 6.0)
-            compressionProps[kVTCompressionPropertyKey_DataRateLimits as String] = [
-                peakBps, 1
-            ] as CFArray
-        }
-
-        // Slider-aware quality hint (0…1).  Maps CRF 14…30 → q 1…0,
-        // then lifts the baseline so the hint stays in 0.75…1.0.
+        // Quality Index bridge for now (until Settings stores 0..100 directly):
+        // CRF 14 (best) .. 30 (worst)  =>  QualityIndex 100 .. 0
         let crfMin = 14.0
         let crfMax = 30.0
         let crf    = min(max(Double(settings.qualityCRF), crfMin), crfMax)
         let t      = (crf - crfMin) / (crfMax - crfMin)
-        let q      = 1.0 - t
-        let qualityHint = min(1.0, max(0.75, 0.82 + 0.18 * q))
-        compressionProps[kVTCompressionPropertyKey_Quality as String] = qualityHint
-        
-        // No pixel-transfer override — let VT pick its own defaults.
+        let qi     = (1.0 - t) * 100.0
 
-        // Prefer HW by default. For experiments you can force software HEVC by setting this to false when codec == .hevc.
+        let tuning = pipeline.qualityMap(qi, width, height, fps)
+
+        var compressionProps: [String: Any] = [
+            AVVideoAllowFrameReorderingKey: tuning.allowFrameReordering,
+            AVVideoMaxKeyFrameIntervalKey:  max(1, Int(round(fps * tuning.keyframeIntervalSeconds)))
+        ]
+
+        if let bps = tuning.averageBitrateBps {
+            compressionProps[AVVideoAverageBitRateKey] = bps
+
+            // VT-native key improves compliance (especially HEVC)
+            compressionProps[kVTCompressionPropertyKey_AverageBitRate as String] = bps
+
+            // DataRateLimits can be unsupported for HEVC encoders (and can crash at AVAssetWriterInput init).
+            // Keep it for H.264 only.
+            if pipeline.id == .h264 {
+                let peakBps = Int(Double(bps) * 6.0)
+                compressionProps[kVTCompressionPropertyKey_DataRateLimits as String] = [
+                    peakBps, 1
+                ] as CFArray
+            }
+        }
+
+
+        if let pl = pipeline.profileLevelVT {
+            compressionProps[AVVideoProfileLevelKey] = pl
+        }
+
+        if let hint = tuning.vtQualityHint {
+            compressionProps[kVTCompressionPropertyKey_Quality as String] = hint
+        }
+
+        // Prefer HW by default.
         let encoderSpec: [String: Any] = [
             kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder  as String: true,
             kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder as String: false
         ]
 
-
-
         return [
-            AVVideoCodecKey:                  codecKey,
-            AVVideoWidthKey:                  width,
-            AVVideoHeightKey:                 height,
-            AVVideoCompressionPropertiesKey:  compressionProps,
-            AVVideoEncoderSpecificationKey:   encoderSpec
+            AVVideoCodecKey:                 pipeline.codec.rawValue,
+            AVVideoWidthKey:                 width,
+            AVVideoHeightKey:                height,
+            AVVideoCompressionPropertiesKey: compressionProps,
+            AVVideoEncoderSpecificationKey:  encoderSpec
         ]
+    }
+
+    /// Wrapper: preserves legacy call sites (engine can call this, or call the overload directly).
+    static func videoInputSettings(settings: Settings, width: Int, height: Int, fps: Double) -> [String: Any] {
+        let pid = EncodePipelineDescriptor.defaultID(for: settings)
+        let pipeline = EncodePipelineDescriptor.make(pid)
+        return videoInputSettings(settings: settings, width: width, height: height, fps: fps, pipeline: pipeline)
     }
 
     // MARK: - Audio settings

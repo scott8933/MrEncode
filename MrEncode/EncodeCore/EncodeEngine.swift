@@ -25,6 +25,7 @@ struct EncodeRequest: Sendable {
     let settings: Settings
     let meta: MediaMetadata
     let filenameForOverlay: String
+    let pipelineID: EncodePipelineID
     let videoFrameHook: (@Sendable (CVPixelBuffer, FrameContext) -> Void)?
 
     init(
@@ -40,6 +41,7 @@ struct EncodeRequest: Sendable {
         self.outputURL = outputURL
         self.allowOverwrite = allowOverwrite
         self.settings = settings
+        self.pipelineID = EncodePipelineDescriptor.defaultID(for: settings)
         self.meta = meta
         self.filenameForOverlay = filenameForOverlay
         self.videoFrameHook = videoFrameHook
@@ -59,9 +61,6 @@ enum EncodeEngine {
         emit: @escaping EncodeEventSink
     ) -> Result<EncodeResult, EncodeError> {
 
-        
-        
-        
         emit(.phase(.preparing))
 
         // Resolve temp URL inside engine (shared behavior for GUI + CLI)
@@ -106,6 +105,14 @@ enum EncodeEngine {
         let aligned = EncodeCore.alignDimensions(target, alignment: 2)
 
         emit(.phase(.buildingPipeline))
+        let pipeline = EncodePipelineDescriptor.make(req.pipelineID)
+
+        // ENCODE_TUNE (one-line): confirm tuning inputs/outputs without spamming logs.
+        let qi = EncodeCore.qualityIndexFromSettings(req.settings)
+        let tuning = pipeline.qualityMap(qi, aligned.width, aligned.height, fps)
+        let pf = pipeline.pixelFormat
+        let pl = pipeline.profileLevelVT as String? ?? "nil"
+        LOG("ENCODE_TUNE pipeline=\(pipeline.id.rawValue) pf=0x\(String(pf, radix: 16)) profile=\(pl) qi=\(Int(qi.rounded())) bitrate=\(tuning.averageBitrateBps ?? -1) vtQ=\(String(format: "%.3f", tuning.vtQualityHint ?? -1)) gop=\(String(format: "%.1f", tuning.keyframeIntervalSeconds)) reorder=\(tuning.allowFrameReordering)")
 
         // Reader
         let reader: AVAssetReader
@@ -164,12 +171,6 @@ enum EncodeEngine {
         writer.movieTimeScale = (frameDur.timescale > 1000) ? frameDur.timescale : CMTimeScale(60000)
         writer.shouldOptimizeForNetworkUse = true
 
-        // --- EncodeEngine.swift (snippet replacement) ---------------------------------
-        // Drop this into your existing EncodeEngine.swift in the same spot where you
-        // currently build `vidSettings` and `videoInput`.
-        // This is hardwired for the 4:2:2 test build: HEVC Main42210 + P210 adaptor,
-        // and it explicitly tags limited range when possible.
-
         var vidSettings = EncodeCore.videoInputSettings(
             settings: req.settings,
             width: aligned.width,
@@ -183,65 +184,26 @@ enum EncodeEngine {
             vidSettings[AVVideoColorPropertiesKey] = props
         }
 
-
-        // TEST BUILD: force HEVC Main42210 profile regardless of Settings.
-        vidSettings[AVVideoCodecKey] = AVVideoCodecType.hevc.rawValue
-
-        // Ensure compression props exists and hardwire the profile level.
-        var compProps = (vidSettings[AVVideoCompressionPropertiesKey] as? [String: Any]) ?? [:]
-        compProps[kVTCompressionPropertyKey_ProfileLevel as String] = (kVTProfileLevel_HEVC_Main42210_AutoLevel as String)
-        vidSettings[AVVideoCompressionPropertiesKey] = compProps
-
         // Build writer input using the forced settings
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: vidSettings)
         videoInput.expectsMediaDataInRealTime = false
         videoInput.mediaTimeScale = frameDur.timescale
         videoInput.transform = .identity
 
-        // TEST BUILD: adaptor is hardwired to P210 (4:2:2 10-bit bi-planar, video-range)
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: videoInput,
-            sourcePixelBufferAttributes: [
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange,
-                kCVPixelBufferWidthKey  as String: aligned.width,
-                kCVPixelBufferHeightKey as String: aligned.height,
-                // Helpful for Metal interop; harmless if ignored.
-                kCVPixelBufferMetalCompatibilityKey as String: true
-            ]
+            sourcePixelBufferAttributes: pipeline.adaptorAttributes(width: aligned.width, height: aligned.height)
         )
 
-        /*
-        let videoInput = AVAssetWriterInput(mediaType: AVMediaType.video, outputSettings: vidSettings)
-        videoInput.expectsMediaDataInRealTime = false
-        videoInput.mediaTimeScale = frameDur.timescale
-        videoInput.transform = CGAffineTransform.identity
 
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
-            assetWriterInput: videoInput,
-            sourcePixelBufferAttributes: [
-                // TEST BUILD: hardwired P210 (4:2:2 10-bit bi-planar, video range)
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange,
-                kCVPixelBufferWidthKey  as String: aligned.width,
-                kCVPixelBufferHeightKey as String: aligned.height
-            ]
-        )
-*/
-        // TEST BUILD: hardwired 4:2:2 10-bit converter (BGRA -> P210). No fallback.
-        guard let metalConverter = Metal42210Converter() else {
-            let e = EncodeError(.pipelineFailed, "Metal42210Converter init failed (Metal device/library/kernel missing).")
-            emit(.failed(e))
-            return .failure(e)
-        }
-        LOG("🧪 214()")
+        let metalConverter = pipeline.makeConverter()
 
-        LOG("🧪 214()")
         guard writer.canAdd(videoInput) else {
             let e = EncodeError(.pipelineFailed, "Cannot add video input to writer.")
             emit(.failed(e))
             return .failure(e)
         }
         writer.add(videoInput)
-        LOG("🧪 221()")
         // Audio input
         var audioInput: AVAssetWriterInput?
         if audioTrack != nil {
@@ -252,18 +214,13 @@ enum EncodeEngine {
                 audioInput = ai
             }
         }
-        LOG("🧪 232()")
+
         // Start I/O
         guard writer.startWriting() else {
             let e = EncodeError(.writerFailed, "Writer start failed: \(writer.error?.localizedDescription ?? "Unknown")")
             emit(.failed(e))
             return .failure(e)
         }
-        LOG("🧪 239()")
-        // ✅ put it HERE (only runs if startWriting succeeded)
-        LOG("   writer.status=\(writer.status.rawValue) (\(writer.status)) err=\(writer.error?.localizedDescription ?? "nil")")
-        LOG("   adaptor.pixelBufferPool is \(adaptor.pixelBufferPool == nil ? "NIL" : "NON-NIL")")
-
 
 
         guard reader.startReading() else {
@@ -271,13 +228,8 @@ enum EncodeEngine {
             emit(.failed(e))
             return .failure(e)
         }
-        LOG("✅ reader.startReading() ok")
-        LOG("   reader.status=\(reader.status.rawValue) (\(reader.status)) err=\(reader.error?.localizedDescription ?? "nil")")
 
         writer.startSession(atSourceTime: .zero)
-        LOG("   writer.status=\(writer.status.rawValue) (\(writer.status)) err=\(writer.error?.localizedDescription ?? "nil")")
-        LOG("   adaptor.pixelBufferPool is \(adaptor.pixelBufferPool == nil ? "NIL" : "NON-NIL")")
-
 
 
         emit(.phase(.encodingVideo))
@@ -372,7 +324,6 @@ enum EncodeEngine {
 
         // VIDEO pump
 
-        // TEST BUILD: 4:2:2 hardwired (no vImage / no CPU fallback)
         group.enter()
         var frameIndex: Int64 = 0
 
@@ -402,33 +353,35 @@ enum EncodeEngine {
                     EncodeCore.applyChromaSmoothing(to: srcPB, radius: 0.6)
                 }
 
-                // TEST BUILD: 4:2:2 hardwired.
-                // Always convert BGRA -> P210 (422 10-bit bi-planar) into the adaptor pool.
-                // No CPU fallback and no source-buffer append.
-                guard let pool = adaptor.pixelBufferPool else {
-                    LOG("❌ adaptor.pixelBufferPool == nil AT FIRST USE")
-                    LOG("   writer.status=\(writer.status.rawValue) (\(writer.status)) err=\(writer.error?.localizedDescription ?? "nil")")
-                    LOG("   videoInput.isReadyForMoreMediaData=\(videoInput.isReadyForMoreMediaData)")
-                    setFailed()
-                    finishVideoPump()
-                    return
+                // Pipeline-driven: if a converter exists (P010/P210), convert into adaptor pool.
+                // Otherwise (e.g. H.264), append the source BGRA buffer directly.
+                let encPB: CVPixelBuffer
+                if let metalConverter {
+                    guard let pool = adaptor.pixelBufferPool else {
+                        setFailed()
+                        finishVideoPump()
+                        return
+                    }
+
+                    var dst: CVPixelBuffer?
+                    if CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &dst) != kCVReturnSuccess || dst == nil {
+                        setFailed()
+                        finishVideoPump()
+                        return
+                    }
+                    let dstPB = dst!
+
+                    if !metalConverter.convert(srcPB: srcPB, dstPB: dstPB) {
+                        setFailed()
+                        finishVideoPump()
+                        return
+                    }
+
+                    encPB = dstPB
+                } else {
+                    encPB = srcPB
                 }
 
-
-                var dst: CVPixelBuffer?
-                if CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &dst) != kCVReturnSuccess || dst == nil {
-                    LOG("❌ CVPixelBufferPoolCreatePixelBuffer failed (P210)")
-                    LOG("   writer.status=\(writer.status.rawValue) (\(writer.status)) err=\(writer.error?.localizedDescription ?? "nil")")
-                    setFailed(); finishVideoPump(); return
-                }
-                let dstPB = dst!
-
-                if !metalConverter.convert(srcPB: srcPB, dstPB: dstPB) {
-                    LOG("❌ Metal42210Converter.convert failed")
-                    setFailed(); finishVideoPump(); return
-                }
-
-                let encPB: CVPixelBuffer = dstPB
 
                 // NCLC per-frame (apply to the buffer that will be encoded)
                 if let triplet = EncodeCore.nclcTripletToApply(settings: req.settings, meta: req.meta) {
@@ -443,13 +396,8 @@ enum EncodeEngine {
 
                 if cancel() { finishVideoPump(); return }
 
-                LOG("➡️ about to append frame @ pts=\(outPTS)")
                 let ok = adaptor.append(encPB, withPresentationTime: outPTS)
                 if !ok {
-                    LOG("❌ pixelBufferAdaptor.append returned FALSE @ pts=\(outPTS)")
-                    LOG("   writer.status=\(writer.status.rawValue) (\(writer.status))")
-                    LOG("   writer.error=\(writer.error?.localizedDescription ?? "nil")")
-                    LOG("   videoInput.isReadyForMoreMediaData=\(videoInput.isReadyForMoreMediaData)")
                     setFailed(); finishVideoPump(); return
                 }
 

@@ -8,7 +8,7 @@
   "burnInTimecode": false,
   "burnInTimecodePosition": "lowerLeft",
   "bypassHEVC": false,
-  "codec": "hevc",
+  "codec": "hevc420",
   "comment": "",
   "containerFormat": "mov",
   "deadlineCommandPath": "",

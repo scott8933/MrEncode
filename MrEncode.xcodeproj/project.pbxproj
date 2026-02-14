@@ -71,6 +71,7 @@
 				EncodeCore/EncodeCore.swift,
 				EncodeCore/EncodeEngine.swift,
 				EncodeCore/EncodeEvents.swift,
+				EncodeCore/EncodePipelineID.swift,
 				EncodeCore/EncodeRenderfarm.swift,
 				EncodeCore/EncodeRunner.swift,
 				EncodeCore/EncodeStats.swift,

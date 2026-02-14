@@ -36,12 +36,16 @@ enum Buckets {
 enum CodecKey {
     static func from(_ codec: VideoCodec) -> String {
         switch codec {
-        case .hevc:   return "h265"
-        case .h264:   return "h264"
-        case .bypass: return "bypass"
+        case .hevc420, .hevc422:
+            return "h265"
+        case .h264:
+            return "h264"
+        case .bypass:
+            return "bypass"
         }
     }
 }
+
 
 // MARK: - Data Models
 
