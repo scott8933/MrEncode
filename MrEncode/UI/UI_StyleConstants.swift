@@ -81,6 +81,7 @@ struct StyleConstants {
         let playbarShadow: Color
         let floatingButtonFill: Color
         let floatingButtonShadow: Color
+        let floatingControlIcon: Color
 
         // Modified state accents (Panel Headers)
         let modifiedAccent: Color                 // used for "(Modified)" suffix + misc
@@ -134,6 +135,7 @@ struct StyleConstants {
         playbarShadow: Color.black.opacity(0.12),
         floatingButtonFill: Color.black.opacity(0.06),
         floatingButtonShadow: Color.black.opacity(0.18),
+        floatingControlIcon: Color.black.opacity(0.52),
 
         // Panel Headers
         modifiedAccent: Color(hex: 0xEC9418), // matches statusWarning hue
@@ -182,6 +184,7 @@ struct StyleConstants {
         playbarShadow: Color.black.opacity(0.80),
         floatingButtonFill: Color.white.opacity(0.90),
         floatingButtonShadow: Color.black.opacity(0.80),
+        floatingControlIcon: Color.white.opacity(0.52),
 
         modifiedAccent: Color(hex: 0xF2A63B),
         headerModifiedLabel: Color(hex: 0xF2A63B).opacity(0.95),

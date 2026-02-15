@@ -457,7 +457,7 @@ private struct EmptyQueueView: View {
         VStack(spacing: 8) {
             Image(systemName: "square.and.arrow.down.on.square")
                 .font(.system(size: 28))
-                .opacity(0.6)
+                //.opacity(0.6)
 
             Text("Drop QuickTime files or Folder here")
                 .foregroundColor(StyleConstants.colors(for: colorScheme).textSecondary)
@@ -467,6 +467,19 @@ private struct EmptyQueueView: View {
 }
 
 
+private struct FloatingPlatterStyle: ViewModifier {
+    let fill: Color
+    let shadow: Color
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                Circle()
+                    .fill(fill)
+            )
+            .shadow(color: shadow, radius: 4, x: 0, y: 4)
+    }
+}
 
 
 private struct AutoEncodeFloatingButton: View {
@@ -474,42 +487,39 @@ private struct AutoEncodeFloatingButton: View {
     @Environment(\.colorScheme) private var colorScheme
 
     private var isOn: Bool { state.settings.autoEncodeOnDrop }
+    private var C: StyleConstants.Colors { StyleConstants.colors(for: colorScheme) }
+
+    private var d: CGFloat { StyleConstants.Sizes.floatingButtonDiameter }
 
     var body: some View {
-        let C = StyleConstants.colors(for: colorScheme)
-
         Button {
             state.settings.autoEncodeOnDrop.toggle()
         } label: {
             ZStack {
-                // --- Icon: 2-layer composite ---
                 ZStack {
                     Image(systemName: "arrow.trianglehead.clockwise")
+                        .renderingMode(.template)
                         .font(.system(size: 22, weight: .regular))
-                        .offset(x: 0, y: -1)
+                        .offset(y: -1)
+
                     Image(systemName: "play.fill")
+                        .renderingMode(.template)
                         .font(.system(size: 12, weight: .regular))
-                        .offset(x: 0, y: 0.50)
+                        .offset(y: 0.5)
                 }
-                // ON: accent icon, OFF: secondary text
-                .foregroundColor(isOn ? C.accent : C.textSecondary)
+                // OFF = constant token, ON = accent blue
+                .foregroundColor(isOn ? C.accent : C.floatingControlIcon)
             }
-            .frame(width: StyleConstants.Sizes.floatingButtonDiameter,
-                   height: StyleConstants.Sizes.floatingButtonDiameter)
-            .background(
-                Circle()
-                    .fill(C.bgPlaybar) // matches platter surface (white in Light)
-                    .shadow(color: C.playbarShadow, radius: 4, x: 0, y: 4)
-            )
-            .overlay(
-                Circle().strokeBorder(isOn ? C.accent : C.strokeSubtle, lineWidth: 1)
-            )
+            .frame(width: d, height: d)
+            .modifier(FloatingPlatterStyle(fill: C.bgPlaybar, shadow: C.playbarShadow))
         }
         .buttonStyle(.plain)
         .fixedSize()
         .help("Auto Encode on Drop")
     }
 }
+
+
 
 private struct EncodePauseCancelFloatingGroup: View {
     @EnvironmentObject var state: AppState
@@ -520,43 +530,33 @@ private struct EncodePauseCancelFloatingGroup: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            // ✅ PAUSED INDICATOR (shows when paused or pausing)
+
+            // Paused indicator (keep accent semantics, but use same token)
             if state.isGloballyPaused {
                 let isPausing = state.files.contains { $0.status == .encoding }
-                
+
                 HStack(spacing: 6) {
                     Image(systemName: isPausing ? "pause.circle" : "pause.circle.fill")
+                        .renderingMode(.template)
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(C.accent)
+                        .foregroundColor(C.floatingControlIcon)
+
                     Text(isPausing ? "Pausing..." : "Paused")
                         .font(.caption)
-                        .foregroundColor(C.accent)
+                        .foregroundColor(C.floatingControlIcon)
                 }
                 .padding(.trailing, 4)
             }
-            
-            groupButton(
-                systemName: "play.fill",
-                help: "Start Encode",
-                isHighlighted: false,
-                action: startEncode
-            )
 
+            groupButton(systemName: "play.fill",  help: "Start Encode", action: startEncode)
             groupButton(
                 systemName: "pause.fill",
                 help: state.isGloballyPaused
                     ? "Queue Paused (click Play to resume)"
-                    : "Pause Queue (finishes current item first)",
-                isHighlighted: state.isGloballyPaused,
+                    : "Pause Queue (finishes current media first)",
                 action: pauseEncode
             )
-
-            groupButton(
-                systemName: "stop.fill",
-                help: "Cancel Encode",
-                isHighlighted: false,
-                action: cancelEncode
-            )
+            groupButton(systemName: "stop.fill",  help: "Cancel Encode", action: cancelEncode)
         }
         .padding(.horizontal, 8)
         .frame(height: d)
@@ -564,50 +564,33 @@ private struct EncodePauseCancelFloatingGroup: View {
             Capsule(style: .continuous)
                 .fill(C.bgPlaybar)
         )
-        .shadow(
-            color: C.playbarShadow,
-            radius: 4,
-            x: 0,
-            y: 4
-        )
+        .shadow(color: C.playbarShadow, radius: 4, x: 0, y: 4)
         .fixedSize()
     }
-    
-    
-
-    // MARK: - Segment button helper
 
     private func groupButton(
         systemName: String,
         help: String,
-        isHighlighted: Bool,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            ZStack {
-                Image(systemName: systemName)
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(
-                        isHighlighted
-                            ? C.accent  // ✅ Blue when highlighted
-                            : Color.primary.opacity(0.50)
-                    )
-            }
-            .frame(width: d, height: d)
+            Image(systemName: systemName)
+                .renderingMode(.template)
+                .font(.system(size: StyleConstants.Typography.queueControlIconSize,
+                              weight: StyleConstants.Typography.queueControlIconWeight))
+                .foregroundColor(C.floatingControlIcon)
+                .frame(width: d, height: d)
         }
         .buttonStyle(.plain)
         .help(help)
     }
 
-    // MARK: - Actions
-
     private func startEncode() {
-        // ✅ If paused, resume instead of starting new encode
         if state.isGloballyPaused {
             state.isGloballyPaused = false
             return
         }
-        
+
         if state.settings.runMode == .remoteDeadline && !state.settings.deadlinePoolsValid {
             state.pushMessage(
                 level: .warning,
@@ -621,14 +604,13 @@ private struct EncodePauseCancelFloatingGroup: View {
 
         let chosen = state.files.filter { $0.isChecked && $0.status == .queued }
         if chosen.isEmpty {
-            state.pushMessage(level: .warning, "No files ready to encode", filename: nil)
+            state.pushMessage(level: .warning, "No media ready to encode", filename: nil)
             return
         }
         state.submit(items: chosen)
     }
 
     private func pauseEncode() {
-        // ✅ Pause toggles on, but doesn't toggle off (Play button handles resume)
         if !state.isGloballyPaused {
             state.isGloballyPaused = true
         }
@@ -639,36 +621,29 @@ private struct EncodePauseCancelFloatingGroup: View {
     }
 }
 
+
 private struct TrashFloatingButton: View {
     @EnvironmentObject var state: AppState
     @Environment(\.colorScheme) private var colorScheme
+    private var C: StyleConstants.Colors { StyleConstants.colors(for: colorScheme) }
 
     private var d: CGFloat { StyleConstants.Sizes.floatingButtonDiameter }
 
     var body: some View {
-        let C = StyleConstants.colors(for: colorScheme)
-
         Button {
             state.clearAll()
         } label: {
             Image(systemName: "trash.fill")
+                .renderingMode(.template)
                 .font(.system(size: 16, weight: .regular))
-                .foregroundColor(C.textSecondary)
+                .foregroundColor(C.floatingControlIcon)
                 .frame(width: d, height: d)
-                .background(
-                    Circle()
-                        .fill(C.bgPlaybar)
-                )
+                .modifier(FloatingPlatterStyle(fill: C.bgPlaybar, shadow: C.playbarShadow))
         }
-        .shadow(
-            color: C.playbarShadow,
-            radius: 4,
-            x: 0,
-            y: 4
-        )
         .buttonStyle(.plain)
         .fixedSize()
         .help("Clear All")
     }
 }
+
 

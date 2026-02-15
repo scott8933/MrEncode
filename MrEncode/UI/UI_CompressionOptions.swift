@@ -13,7 +13,9 @@ struct UI_CompressionOptions: View {
     private let itemGap: CGFloat = 2
     private var groupGap: CGFloat = 30
     private let modePickerWidth: CGFloat = 220
-    private let qualitySliderMaxWidth: CGFloat = 400
+    private let qualitySliderMaxWidth: CGFloat = 480
+    
+    @State private var qualityUI: Double = 0
 
     
     var body: some View {
@@ -101,25 +103,22 @@ struct UI_CompressionOptions: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack(spacing: 8) {
                                     Text("Quality").font(.headline)
-                                    Text("\(qualityPercent)% – \(qualityCodecLabel)")
+                                    Text("\(Int(qualityUI.rounded()))% – \(qualityCodecLabel)")
                                         .font(.subheadline)
                                         .foregroundColor(C.textSecondary)
+                                        .monospacedDigit()
                                 }
 
                                 HStack {
                                     Text("Lower").font(.caption)
+
                                     Slider(
-                                        value: Binding(
-                                            get: { Double(qualityPercent) },
-                                            set: { newValue in
-                                                let clamped = min(max(Int(newValue.rounded()), 0), 100)
-                                                state.settings.qualityCRF = crfFromQualityPercent(clamped)
-                                            }
-                                        ),
+                                        value: $qualityUI,
                                         in: 0.0...100.0,
                                         step: 1.0
                                     )
                                     .frame(maxWidth: qualitySliderMaxWidth)
+
                                     Text("Higher").font(.caption)
                                 }
                                 .help("Higher = better quality.")
@@ -127,7 +126,24 @@ struct UI_CompressionOptions: View {
                             .gridCellColumns(5)
                         }
                         .transition(.opacity)
+
+                        // Seed from current settings (prefs/preset) when this appears
+                        .onAppear {
+                            qualityUI = Double(qualityPercent)
+                        }
+
+                        // Keep UI in sync if preset/prefs change qualityCRF externally
+                        .onChange(of: state.settings.qualityCRF) { _ in
+                            qualityUI = Double(qualityPercent)
+                        }
+
+                        // Live update CRF while dragging (this is what makes the label responsive)
+                        .onChange(of: qualityUI) { newValue in
+                            let clamped = min(max(Int(newValue.rounded()), 0), 100)
+                            state.settings.qualityCRF = crfFromQualityPercent(clamped)
+                        }
                     }
+
 
                     // MARK: Filename Suffix
                     GridRow {

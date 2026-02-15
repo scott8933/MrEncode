@@ -197,41 +197,38 @@ private struct PresetActions: View {
     @EnvironmentObject var presetViewModel: PresetViewModel
     @State private var showSaveDialog = false
 
-    // One place to tune the button width
-    private let buttonWidth: CGFloat = 90
+    // All button layout tuning in one place
+    private enum M {
+        static let hSpacing: CGFloat = 14          // spacing between buttons in the row
+        static let buttonWidth: CGFloat = 108
+        static let buttonHeight: CGFloat = 24      // overall control height
+        static let labelHPad: CGFloat = 8          // inner horizontal padding
+        static let labelVPad: CGFloat = 0          // inner vertical padding (usually 0 if you set buttonHeight)
+        static let font: Font = .caption
+        static let controlSize: ControlSize = .small
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
-            presetActionButton(
-                "Save Preset",
-                help: "Save current panel settings as a new preset"
-            ) {
+        HStack(spacing: M.hSpacing) {
+            presetActionButton("Save Preset", help: "Save current panel settings as a new preset") {
                 showSaveDialog = true
             }
 
-            presetActionButton(
-                "Export Droplet",
-                help: "Export current preset as a drag-and-drop processing file"
-            ) {
+            presetActionButton("Export Droplet", help: "Export current preset as a drag-and-drop processing file") {
                 state.exportCurrentSettingsAsDroplet()
             }
 
-            presetActionButton(
-                "Import Droplet",
-                help: "Import a MrEncode droplet (.app) or preset JSON into your saved presets"
-            ) {
+            presetActionButton("Import Droplet", help: "Import a MrEncode droplet (.app) or preset JSON into your saved presets") {
                 importPresetFromDroplet()
             }
 
-            presetActionButton(
-                "Manage Presets",
-                help: "Rename, delete, and organize presets"
-            ) {
+            presetActionButton("Manage Presets", help: "Rename, delete, and organize presets") {
                 state.showPreferences = true
             }
 
             Spacer()
         }
+        .controlSize(M.controlSize)
         .buttonStyle(.bordered)
         .alert("Save Preset", isPresented: $showSaveDialog) {
             SavePresetAlert()
@@ -240,9 +237,6 @@ private struct PresetActions: View {
         }
     }
 
-    // MARK: - Button helper
-
-    @ViewBuilder
     private func presetActionButton(
         _ title: String,
         help: String,
@@ -250,10 +244,12 @@ private struct PresetActions: View {
     ) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.caption)
-                .frame(width: buttonWidth)     // <- fixed width for all four
-                .padding(.vertical, 6)
+                .font(M.font)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, M.labelHPad)
+                .padding(.vertical, M.labelVPad)
         }
+        .frame(width: M.buttonWidth, height: M.buttonHeight)
         .help(help)
     }
 

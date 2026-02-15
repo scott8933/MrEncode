@@ -124,39 +124,40 @@ struct UI_OverlayOptions: View {
                         }
                         .gridCellColumns(5)
                     }
+
+                    // Divider between sections
+                    GridRow {
+                        Divider().gridCellColumns(5)
+                    }
+
+                    // MARK: Filename Suffix (Overlays)
+                    GridRow {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 12) {
+                                Text("Filename Suffix").font(.headline)
+                                Text("Example: \(exampleOverlayOutputName)")
+                                    .font(.caption)
+                                    .foregroundColor(C.textSecondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
+
+                            TextField(overlaySuffixPlaceholder, text: $state.settings.overlaySuffix)
+                                .panelTextFieldStyle(C)
+                                .help("Appends this to the output filename before the extension.")
+                                .onChange(of: state.settings.overlaySuffix) { _ in
+                                    Task { @MainActor in
+                                        AppCore.shared.applyNamingChangeToQueue(reason: AppCore.NamingChangeReason.suffixChanged)
+                                    }
+                                }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading) // ensures right edge expands correctly
+                        .gridCellColumns(5)
+                    }
                 }
                 .padding(StyleConstants.panelInsets)
                 .padding(.top, StyleConstants.panelInsets.top) // base + extra top padding rule
                 .transition(.opacity)
-                
-                // Divider between sections
-                GridRow {
-                    Divider().gridCellColumns(5)
-                }
-
-                // MARK: Filename Suffix (Overlays)
-                GridRow {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 12) {
-                            Text("Filename Suffix").font(.headline)
-                            Text("Example: \(exampleOverlayOutputName)")
-                                .font(.caption)
-                                .foregroundColor(C.textSecondary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                        }
-
-                        TextField(overlaySuffixPlaceholder, text: $state.settings.overlaySuffix)
-                            .panelTextFieldStyle(C)
-                            .help("Appends this to the output filename before the extension.")
-                            .onChange(of: state.settings.overlaySuffix) { _ in
-                                Task { @MainActor in
-                                    AppCore.shared.applyNamingChangeToQueue(reason: AppCore.NamingChangeReason.suffixChanged)
-                                }
-                            }
-                    }
-                    .gridCellColumns(5)
-                }
             }
         }
         .fixedSize(horizontal: false, vertical: true)
