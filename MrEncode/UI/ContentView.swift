@@ -12,6 +12,7 @@ import AppKit
 import UniformTypeIdentifiers
 #endif
 
+
 struct ContentView: View {
     
     @Environment(\.colorScheme) private var colorScheme
@@ -22,12 +23,17 @@ struct ContentView: View {
 
     @State private var isShowingQueueImporter = false
     @State private var queueImportMode: QueueImportMode = .replace
+    @State private var dropZoneFrame: CGRect = .zero
+    @State private var footerFrame: CGRect = .zero
+    @State private var floatingControlsHeight: CGFloat = 0
+    @State private var dropZoneTopY: CGFloat = 0  // Changed from .greatestFiniteMagnitude
+    @State private var scrollOffset: CGFloat = 0  // Add this
 
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
                 // Main column: Options (top) + DZ (bottom), unified scroll
-                RightSideContent()
+                MainContent()
                     .environmentObject(state)
 
                 // Footer with status + main progress bar
@@ -42,6 +48,7 @@ struct ContentView: View {
                     .zIndex(10)
             }
         }
+        .coordinateSpace(name: FloatingC.coordSpaceName)
         .sheet(isPresented: $state.showPreferences) {
             UI_PreferencesView()
                 .environmentObject(state)
@@ -50,6 +57,35 @@ struct ContentView: View {
             minWidth: StyleConstants.Sizes.windowMinWidth,
             minHeight: StyleConstants.Sizes.windowMinHeight
         )
+
+        .overlay {
+            // Fade gradients layer (behind DZ stroke)
+            FadeGradientsOverlay(
+                dropZoneFrame: dropZoneFrame,
+                footerFrame: footerFrame
+            )
+            .environmentObject(state)
+        }
+
+        .overlay {
+            FloatingQueueControlsOverlay(
+                dropZoneFrame: dropZoneFrame,
+                dropZoneTopY: dropZoneTopY,
+                footerFrame: footerFrame,
+                floatingControlsHeight: $floatingControlsHeight,
+                scrollOffset: scrollOffset
+            )
+            .environmentObject(state)
+        }
+        
+        // Corner cutouts to make a nicer scroll mask
+        .overlay {
+            CornerCutoutsOverlay(
+                dropZoneFrame: dropZoneFrame,
+                footerFrame: footerFrame
+            )
+        }
+
         .onChange(of: state.settings.runMode) { (newMode: RunMode) in
             DispatchQueue.main.async {
                 state.revalidateFilesForCurrentMode()
@@ -61,6 +97,21 @@ struct ContentView: View {
         .modifier(RevalidateOnSettingsChange())
         .onAppear {
             state.revalidateFilesForCurrentMode()
+        }
+        
+        // Live drop zone frame updates
+        .onReceive(NotificationCenter.default.publisher(for: .dropZoneFrameChanged)) { notification in
+            if let frame = notification.object as? CGRect {
+                dropZoneFrame = frame
+                dropZoneTopY = frame.minY
+            }
+        }
+
+        // Live footer frame updates (ADD THIS)
+        .onReceive(NotificationCenter.default.publisher(for: .footerFrameChanged)) { notification in
+            if let frame = notification.object as? CGRect {
+                footerFrame = frame
+            }
         }
 
         // Contextual menu Import Media
@@ -204,25 +255,61 @@ struct ContentView: View {
     #endif
 }
 
-// MARK: - Right-side layout: Options above DZ, DZ fills remaining space, unified scroll
+private struct FloatingQueueControlsBar: View {
+    @EnvironmentObject var state: AppState
 
-private struct RightSideContent: View {
+    var body: some View {
+        HStack(spacing: 24) {
+
+            AutoEncodeFloatingButton()
+                .environmentObject(state)
+
+            Spacer(minLength: 20)
+
+            EncodePauseCancelFloatingGroup()
+                .environmentObject(state)
+
+            TrashFloatingButton()
+                .environmentObject(state)
+        }
+        .padding(.horizontal, StyleConstants.Spacing.panelPaddingV_expanded)
+        .padding(.bottom, StyleConstants.Spacing.panelPaddingV_expanded)
+    }
+}
+
+
+// MARK: - Main layout: Options above DZ, DZ fills remaining space, unified scroll
+
+private struct MainContent: View {
     @EnvironmentObject var state: AppState
     @Environment(\.colorScheme) private var colorScheme
     private var C: StyleConstants.Colors { StyleConstants.colors(for: colorScheme) }
-
+    
+    @State private var scrollViewID = "mainScroll"
 
     var body: some View {
         HStack(spacing: 0) {
-            GeometryReader { proxy in
+            GeometryReader { outerGeo in
                 ScrollView(.vertical) {
                     VStack(spacing: StyleConstants.Spacing.sectionSpacing) {
+
+                        // Scroll tracker at top
+                        Color.clear
+                            .frame(height: 1)
+                            .background(
+                                GeometryReader { geo in
+                                    Color.clear.preference(
+                                        key: ScrollOffsetPreferenceKey.self,
+                                        value: geo.frame(in: .global).minY - outerGeo.frame(in: .global).minY
+                                    )
+                                }
+                            )
 
                         // --- Options panel (top, natural height) ---
                         OptionsPanel()
                             .environmentObject(state)
 
-                        // --- Drop Zone / Queue panel (fills remaining vertical space) ---
+                        // --- Drop Zone / Queue panel ---
                         UI_Queue(
                             fixedHeight: nil,
                             isAutoMode: false,
@@ -246,11 +333,9 @@ private struct RightSideContent: View {
                     .padding(.horizontal, StyleConstants.Spacing.contentHorizontalPadding)
                     .padding(.top, StyleConstants.Spacing.contentVerticalPadding)
                     .padding(.bottom, StyleConstants.Spacing.panelSpacing)
-                    // Make the stack at least as tall as the viewport so DZ can
-                    // expand to fill any extra space below Options.
                     .frame(
                         maxWidth: .infinity,
-                        minHeight: proxy.size.height,
+                        minHeight: outerGeo.size.height,
                         alignment: .top
                     )
                 }
@@ -258,7 +343,6 @@ private struct RightSideContent: View {
                 .background(C.bgApp)
             }
 
-            // Right gutter to keep any scrollbar off the rounded panel edge
             Rectangle()
                 .fill(C.bgApp)
                 .frame(width: StyleConstants.Spacing.scrollBarMarginWidth)
@@ -403,6 +487,43 @@ private struct FooterOverlay: View {
         .padding(.bottom, StyleConstants.Spacing.footerBottomPadding)
         .background(C.bgInset)
         .ignoresSafeArea(edges: .bottom)
+        .background(
+            GeometryReader { geo in
+                let frame = geo.frame(in: .named(FloatingC.coordSpaceName))
+                Color.clear
+                    .onAppear {
+                        // Post initial frame on appear
+                        DispatchQueue.main.async {
+                            NotificationCenter.default.post(
+                                name: .footerFrameChanged,
+                                object: frame
+                            )
+                        }
+                    }
+                    .preference(
+                        key: FooterFramePreferenceKey.self,
+                        value: frame
+                    )
+            }
+        )
+        .background(
+            GeometryReader { geo in
+                let frame = geo.frame(in: .named(FloatingC.coordSpaceName))
+                Color.clear
+                    .onChange(of: frame) { newFrame in
+                        DispatchQueue.main.async {
+                            NotificationCenter.default.post(
+                                name: .footerFrameChanged,
+                                object: newFrame
+                            )
+                        }
+                    }
+                    .preference(
+                        key: FooterFramePreferenceKey.self,
+                        value: frame
+                    )
+            }
+        )
         .onAppear { footerViewModel.bind(to: state) }
     }
 }
@@ -503,6 +624,86 @@ private struct FooterControls: View {
 }
 
 
+// MARK: - Floating Controls Geometry (ContentCS)
+
+private struct FloatingQueueControlsOverlay: View {
+    @EnvironmentObject var state: AppState
+
+    let dropZoneFrame: CGRect
+    let dropZoneTopY: CGFloat
+    let footerFrame: CGRect
+    @Binding var floatingControlsHeight: CGFloat
+    let scrollOffset: CGFloat
+    
+    @Environment(\.colorScheme) private var colorScheme
+    private var C: StyleConstants.Colors { StyleConstants.colors(for: colorScheme) }
+
+    var body: some View {
+        GeometryReader { geo in
+            let sideInset: CGFloat = 12
+            
+            // TODO need to fix this - must be padding preventing it from moving lower
+            let liftY: CGFloat = 00
+            
+            let gap = StyleConstants.Spacing.panelPaddingV_expanded
+            
+            let barHalf = floatingControlsHeight > 0 ? floatingControlsHeight * 0.5 : 23
+            
+            let dzResolved = dropZoneFrame.width > 1 && dropZoneFrame.height > 1
+
+            if dzResolved {
+                let dzMidX = dropZoneFrame.midX
+                let barWidth = max(1, dropZoneFrame.width - (sideInset * 2))
+                
+                let footerTopY: CGFloat = footerFrame.minY > 0
+                    ? footerFrame.minY
+                    : geo.size.height - 80
+
+                let targetBottomY = footerTopY - liftY
+                let targetCenterY = targetBottomY - barHalf
+
+                let minCenterY = dropZoneFrame.minY + gap + barHalf
+                let maxCenterY = dropZoneFrame.maxY - gap - barHalf
+
+                let finalCenterY = max(min(targetCenterY, maxCenterY), minCenterY)
+                
+                let visibleHeight = max(0, footerTopY - dropZoneFrame.minY)
+
+                ZStack {
+                    // Just the floating buttons now, gradients removed
+                    FloatingQueueControlsBar()
+                        .environmentObject(state)
+                        .frame(width: barWidth)
+                        .background(
+                            GeometryReader { barGeo in
+                                Color.clear.preference(
+                                    key: FloatingControlsHeightPreferenceKey.self,
+                                    value: barGeo.size.height
+                                )
+                            }
+                        )
+                        .position(x: dzMidX, y: finalCenterY)
+                        .animation(.easeInOut(duration: StyleConstants.Motion.expandAnimationDuration), value: barWidth)
+                        .zIndex(5)
+                }
+                .mask {
+                    RoundedRectangle(
+                        cornerRadius: StyleConstants.Spacing.panelCornerRadius,
+                        style: .continuous  // Add this - matches the DZ's corner style
+                    )
+                    .frame(width: dropZoneFrame.width, height: visibleHeight)
+                    .position(
+                        x: dropZoneFrame.midX,
+                        y: dropZoneFrame.minY + visibleHeight / 2
+                    )
+                    .animation(.easeInOut(duration: StyleConstants.Motion.expandAnimationDuration), value: dropZoneFrame.size)
+                    .animation(.easeInOut(duration: StyleConstants.Motion.expandAnimationDuration), value: visibleHeight)
+                }
+            }
+        }
+    }
+}
+
 
 // MARK: - Settings Revalidation
 
@@ -525,3 +726,131 @@ private struct RevalidateOnSettingsChange: ViewModifier {
 }
 
 
+// MARK: Corner cutouts / fake rounded corner mask over DZ scroll
+
+private struct CornerCutoutsOverlay: View {
+    @Environment(\.colorScheme) private var colorScheme
+    private var C: StyleConstants.Colors { StyleConstants.colors(for: colorScheme) }
+    
+    let dropZoneFrame: CGRect
+    let footerFrame: CGRect
+    
+    var body: some View {
+        GeometryReader { geo in
+            let r = StyleConstants.Spacing.panelCornerRadius
+            let dzLeft = dropZoneFrame.minX
+            let dzRight = dropZoneFrame.maxX
+            let fixedTop = CGFloat(0)
+            let fixedBottom = footerFrame.minY > 0 ? footerFrame.minY : geo.size.height - 80
+            
+            // Top-left corner fill
+            Path { path in
+                path.move(to: CGPoint(x: dzLeft, y: fixedTop))
+                path.addLine(to: CGPoint(x: dzLeft, y: fixedTop + r))
+                path.addQuadCurve(
+                    to: CGPoint(x: dzLeft + r, y: fixedTop),
+                    control: CGPoint(x: dzLeft, y: fixedTop)
+                )
+                path.addLine(to: CGPoint(x: dzLeft, y: fixedTop))
+                path.closeSubpath()
+            }
+            .fill(C.bgApp)
+            
+            // Top-right corner fill
+            Path { path in
+                path.move(to: CGPoint(x: dzRight, y: fixedTop))
+                path.addLine(to: CGPoint(x: dzRight, y: fixedTop + r))
+                path.addQuadCurve(
+                    to: CGPoint(x: dzRight - r, y: fixedTop),
+                    control: CGPoint(x: dzRight, y: fixedTop)
+                )
+                path.addLine(to: CGPoint(x: dzRight, y: fixedTop))
+                path.closeSubpath()
+            }
+            .fill(C.bgApp)
+            
+            // Bottom-left corner fill
+            Path { path in
+                path.move(to: CGPoint(x: dzLeft, y: fixedBottom))
+                path.addLine(to: CGPoint(x: dzLeft, y: fixedBottom - r))
+                path.addQuadCurve(
+                    to: CGPoint(x: dzLeft + r, y: fixedBottom),
+                    control: CGPoint(x: dzLeft, y: fixedBottom)
+                )
+                path.closeSubpath()
+            }
+            .fill(C.bgApp)
+            
+            // Bottom-right corner fill
+            Path { path in
+                path.move(to: CGPoint(x: dzRight, y: fixedBottom))
+                path.addLine(to: CGPoint(x: dzRight, y: fixedBottom - r))
+                path.addQuadCurve(
+                    to: CGPoint(x: dzRight - r, y: fixedBottom),
+                    control: CGPoint(x: dzRight, y: fixedBottom)
+                )
+                path.closeSubpath()
+            }
+            .fill(C.bgApp)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+
+// MARK: - Gradient thing
+
+private struct FadeGradientsOverlay: View {
+    @EnvironmentObject var state: AppState
+    @Environment(\.colorScheme) private var colorScheme
+    private var C: StyleConstants.Colors { StyleConstants.colors(for: colorScheme) }
+    
+    let dropZoneFrame: CGRect
+    let footerFrame: CGRect
+    
+    var body: some View {
+        GeometryReader { geo in
+            let dzResolved = dropZoneFrame.width > 1 && dropZoneFrame.height > 1
+            
+            if dzResolved {
+                let footerTopY: CGFloat = footerFrame.minY > 0
+                    ? footerFrame.minY
+                    : geo.size.height - 80
+                
+                let visibleHeight = max(0, footerTopY - dropZoneFrame.minY)
+                
+                ZStack {
+                    // Top fade gradient (fixed to viewport top, not DZ top)
+                    LinearGradient(
+                        colors: [C.bgDropZone, Color.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(width: dropZoneFrame.width, height: 60)
+                    .position(x: dropZoneFrame.midX, y: 30)  // Fixed to top of viewport
+                    .allowsHitTesting(false)
+                    
+                    // Bottom fade gradient (behind buttons)
+                    LinearGradient(
+                        colors: [Color.clear, C.bgDropZone],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(width: dropZoneFrame.width, height: 100)
+                    .position(x: dropZoneFrame.midX, y: footerTopY - 50)
+                    .allowsHitTesting(false)
+                }
+                .mask {
+                    RoundedRectangle(
+                        cornerRadius: StyleConstants.Spacing.panelCornerRadius,
+                        style: .continuous  // <- Add this
+                    )                        .frame(width: dropZoneFrame.width, height: visibleHeight)
+                        .position(
+                            x: dropZoneFrame.midX,
+                            y: dropZoneFrame.minY + visibleHeight / 2
+                        )
+                }
+            }
+        }
+    }
+}

@@ -44,7 +44,7 @@ struct StyleConstants {
         let bgDropZone: Color
         let bgPanel: Color
         let bgInset: Color
-        let panelWash: Color
+        let panelWash: Color        // use this to tint the Option Panels. Not used.
 
         // Strokes / dividers
         let strokeDropZone: Color
@@ -131,7 +131,7 @@ struct StyleConstants {
         linkDisabled: Color.black.opacity(0.32),
         
         // Buttons and Surfaces:
-        bgPlaybar: Color.white,
+        bgPlaybar: Color.white.opacity(0.92),
         playbarShadow: Color.black.opacity(0.12),
         floatingButtonFill: Color.black.opacity(0.06),
         floatingButtonShadow: Color.black.opacity(0.18),

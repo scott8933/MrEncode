@@ -79,18 +79,57 @@ struct UI_Queue: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else {
-                ZStack(alignment: .top) {
-                    QueueList()
-                        .frame(maxWidth: .infinity, alignment: .top)
-                }
-                .padding(StyleConstants.Spacing.panelPaddingV_expanded)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                QueueList()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(StyleConstants.Spacing.panelPaddingV_expanded)
             }
         }
+        
+        .clipShape(RoundedRectangle(cornerRadius: StyleConstants.Spacing.panelCornerRadius, style: .continuous))  // <- Add this line
         .frame(maxWidth: .infinity, alignment: .top)
         .ifLet(fixedHeight) { view, h in
-            view.frame(height: h, alignment: .top) // parent-controlled Queue height
+            view.frame(height: h, alignment: .top)
         }
+
+        .background(
+            GeometryReader { geo in
+                let frame = geo.frame(in: .named(FloatingC.coordSpaceName))
+                Color.clear
+                    .onAppear {
+                        // Post initial frame on appear
+                        DispatchQueue.main.async {
+                            NotificationCenter.default.post(
+                                name: .dropZoneFrameChanged,
+                                object: frame
+                            )
+                        }
+                    }
+                    .onChange(of: frame) { newFrame in
+                        DispatchQueue.main.async {
+                            NotificationCenter.default.post(
+                                name: .dropZoneFrameChanged,
+                                object: newFrame
+                            )
+                        }
+                    }
+                    .preference(key: DropZoneFramePreferenceKey.self, value: frame)
+                    .preference(key: DropZoneTopYPreferenceKey.self, value: frame.minY)
+            }
+        )
+
+        .frame(maxWidth: .infinity, alignment: .top)
+        .ifLet(fixedHeight) { view, h in
+            view.frame(height: h, alignment: .top)
+        }
+
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: DropZoneFramePreferenceKey.self,
+                    value: geo.frame(in: .named(FloatingC.coordSpaceName))
+                )
+            }
+        )
         
         .onDrop(of: [.fileURL], isTargeted: $isTargeted) { providers in
             handleDroppedProviders(providers)
@@ -125,30 +164,6 @@ struct UI_Queue: View {
                         NotificationCenter.default.post(name: .mrEncodeAppendQueueRequested, object: nil)
                     }
                 }
-
-
-        
-        // Button overlays
-        .overlay(alignment: .bottom) {
-            HStack(spacing: 24) {
-
-                // Leftmost: AutoEncode
-                AutoEncodeFloatingButton()
-                    .environmentObject(state)
-
-                Spacer(minLength: 20)
-
-                // Triplet (Encode/Pause/Cancel) hugging Trash on the left
-                EncodePauseCancelFloatingGroup()
-                    .environmentObject(state)
-
-                // Trash (rightmost)
-                TrashFloatingButton()
-                    .environmentObject(state)
-            }
-            .padding(.horizontal, StyleConstants.Spacing.panelPaddingV_expanded)
-            .padding(.bottom, StyleConstants.Spacing.panelPaddingV_expanded)
-        }
 
         // Alerts (preserved)
         .alert(AppCore.shared.folderAlertTitle, isPresented: Binding(
@@ -409,9 +424,14 @@ private struct QueueList: View {
                         .padding(.horizontal, StyleConstants.Spacing.panelPaddingV_expanded)
                 }
             }
+            
+            // Overscroll spacer
+            Color.clear
+                .frame(height: 60)
         }
         .padding(.vertical, StyleConstants.Spacing.panelSpacing)
-
+        .frame(maxWidth: .infinity, alignment: .top)
+        
         .onChange(of: state.settings.runMode) { newMode in
             if newMode == .remoteDeadline {
                 // Validate sources for farm access; block and uncheck if not visible
@@ -467,7 +487,7 @@ private struct EmptyQueueView: View {
 }
 
 
-private struct FloatingPlatterStyle: ViewModifier {
+struct FloatingPlatterStyle: ViewModifier {
     let fill: Color
     let shadow: Color
 
@@ -482,7 +502,7 @@ private struct FloatingPlatterStyle: ViewModifier {
 }
 
 
-private struct AutoEncodeFloatingButton: View {
+struct AutoEncodeFloatingButton: View {
     @EnvironmentObject var state: AppState
     @Environment(\.colorScheme) private var colorScheme
 
@@ -521,7 +541,7 @@ private struct AutoEncodeFloatingButton: View {
 
 
 
-private struct EncodePauseCancelFloatingGroup: View {
+struct EncodePauseCancelFloatingGroup: View {
     @EnvironmentObject var state: AppState
     @Environment(\.colorScheme) private var colorScheme
     private var C: StyleConstants.Colors { StyleConstants.colors(for: colorScheme) }
@@ -622,7 +642,7 @@ private struct EncodePauseCancelFloatingGroup: View {
 }
 
 
-private struct TrashFloatingButton: View {
+struct TrashFloatingButton: View {
     @EnvironmentObject var state: AppState
     @Environment(\.colorScheme) private var colorScheme
     private var C: StyleConstants.Colors { StyleConstants.colors(for: colorScheme) }
